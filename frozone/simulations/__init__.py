@@ -9,10 +9,13 @@ import numpy as np
 class Simulation(abc.ABC):
 
     class ProcessVariables(enum.IntEnum):
-        pass
+        """ States observable to the controller. """
 
     class ControlVariables(enum.IntEnum):
-        pass
+        """ Variables that are set by the controller, generally referred to as u in literature. """
+
+    class HiddenVariables(enum.IntEnum):
+        """ Variables hidden from the controller. """
 
     @abc.abstractclassmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
@@ -25,12 +28,19 @@ class Simulation(abc.ABC):
 
     @abc.abstractclassmethod
     def sample_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray, dt: float) -> np.ndarray:
+        """ Sample new control variables for next time step. """
+
+    @abc.abstractclassmethod
+    def sample_init_hidden_vars(cls, n: int) -> np.ndarray:
         pass
 
     @classmethod
-    def simulate(cls, n: int, iters: int, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, iters: int, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         process_states = np.empty((n, iters + 1, len(cls.ProcessVariables)), dtype=np.float32)
         process_states[:, 0] = cls.sample_init_process_vars(n)
+
+        hidden_states = np.empty((n, iters + 1, len(cls.HiddenVariables)), dtype=np.float32)
+        hidden_states[:, 0] = cls.sample_init_hidden_vars(n)
 
         control_states = np.empty((n, iters, len(cls.ControlVariables)), dtype=np.float32)
 
@@ -48,23 +58,29 @@ class Simulation(abc.ABC):
                     dt = dt
                 )
 
-            process_states[:, i + 1] = cls.forward(process_states[:, i], control_states[:, i], dt)
+            process_states[:, i + 1], hidden_states[:, i + 1] = cls.forward(process_states[:, i], hidden_states[:, i], control_states[:, i], dt)
 
-        return process_states, control_states
+        return process_states, hidden_states, control_states
 
     @abc.abstractclassmethod
-    def forward(cls, process_states: np.ndarray, control_states: np.ndarray, dt: float) -> np.ndarray:
+    def forward(cls, process_states: np.ndarray, hidden_states: np.ndarray, control_states: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
         pass
 
     @classmethod
-    def forward_multiple(cls, process_states: np.ndarray, control_states: np.ndarray, dt: float) -> np.ndarray:
+    def forward_multiple(cls, process_states: np.ndarray, hidden_states: np.ndarray, control_states: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
         n, iters = control_states.shape[:2]
 
         tmp = process_states
         process_states = np.empty((n, iters + 1, len(cls.ProcessVariables)), dtype=np.float32)
         process_states[:, 0] = tmp
 
-        for i in range(iters):
-            process_states[:, i + 1] = cls.forward(process_states[:, i], control_states[:, i], dt)
+        tmp = hidden_states
+        hidden_states = np.empty((n, iters + 1, len(cls.HiddenVariables)), dtype=np.float32)
+        hidden_states[:, 0] = tmp
 
-        return process_states
+        for i in range(iters):
+            process_states[:, i + 1], hidden_states[:, i + 1] = cls.forward(process_states[:, i], hidden_states[:, i], control_states[:, i], dt)
+
+        return process_states, hidden_states
+
+from .ball import Ball
