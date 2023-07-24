@@ -6,6 +6,8 @@ local_*
 *.out
 .python-version
 
+out
+
 # Latex
 *.aux
 *.bbl
