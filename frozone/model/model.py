@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 from pelutils import DataStorage
 
+from frozone import device
+
 
 class Frozone(nn.Module):
 
@@ -15,7 +17,6 @@ class Frozone(nn.Module):
         num_process_var: int
         num_control_var: int
 
-        dt: float
         history_window_steps: int
         predict_window_steps: int
 
@@ -25,7 +26,6 @@ class Frozone(nn.Module):
         def __post_init__(self):
             assert self.num_process_var > 0
             assert self.num_control_var > 0
-            assert self.dt > 0
             assert self.history_window_steps > 0
             assert self.predict_window_steps > 0
             assert self.num_hidden_layers >= 0
@@ -66,10 +66,10 @@ class Frozone(nn.Module):
 
     def save(self, path: str):
         torch.save(self.state_dict(), os.path.join(path, self._state_dict_file_name()))
-        self.config.save(path, self.__class__.__name__)
+        self.config.save(path)
 
     @classmethod
-    def load(cls, path: str, device: torch.device) -> Frozone:
+    def load(cls, path: str) -> Frozone:
         config = cls.Config.load(path, cls.__name__)
         model = cls(config).to(device)
         model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name()), map_location=device))

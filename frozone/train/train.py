@@ -1,46 +1,65 @@
-import torch
-from pelutils import TT
+from typing import Type
 
+import torch
+from pelutils import TT, JobDescription, log, thousands_seperators
+
+import frozone.simulations as simulations
 from frozone import device
 from frozone.data.dataloader import simulation_dataloader as create_dataloader
 from frozone.model import Frozone
-from frozone.simulations import Ball
+from frozone.train import TrainConfig
 
 
-def train():
-    batches = 10000
-    batch_size = 100
+def train(job: JobDescription):
 
-    # Windows are given in seconds
-    history_window = 10
-    prediction_window = 5
+    train_cfg = TrainConfig()
 
-    dt = 0.1
-    history_window_steps = int(history_window / dt)
-    predict_window_steps = int(prediction_window / dt)
+    env: Type[simulations.Simulation] = getattr(simulations, train_cfg.env)
+    log("Got environment %s" % env.__name__)
 
-    simulation = Ball
     model = Frozone(Frozone.Config(
-        len(simulation.ProcessVariables),
-        len(simulation.ControlVariables),
-        0.1, history_window_steps, predict_window_steps, 3, 100,
+        len(env.ProcessVariables),
+        len(env.ControlVariables),
+        train_cfg.history_window_steps, train_cfg.predict_window_steps, 3, 100,
     )).to(device)
+    log("Built model", model)
+    log("Number of model parameters: %s" % thousands_seperators(model.numel()))
+
     optim = torch.optim.AdamW(model.parameters(), lr=1e-5)
     loss_fn = torch.nn.MSELoss()
 
-    train_dataloader = create_dataloader(simulation, batch_size, model)
-    test_dataloader = create_dataloader(simulation, batch_size, model)
+    train_dataloader = create_dataloader(env, train_cfg)
+    test_dataloader = create_dataloader(env, train_cfg)
 
-    for i in range(batches):
-        if i % 500 == 0:
-            with torch.inference_mode(), TT.profile("Evaluate"):
-                model.eval()
+    def checkpoint(batch_no: int):
+        """ Performs checkpoint operations such as saving model progress, plotting, evaluation, etc. """
+        log("Doing checkpoint at batch %i" % batch_no)
+
+        with TT.profile("Checkpoint"), torch.inference_mode():
+            model.eval()
+
+            with TT.profile("Evalutate"):
                 history_process, history_control, target_process, target_control = next(test_dataloader)
                 with TT.profile("Forward"):
                     predicted_control = model(history_process, history_control, target_process)
                 loss = loss_fn(target_control, predicted_control)
-                print(i, "TEST LOSS %.6f" % loss.item())
-                model.train()
+                log("Evaluation loss: %.6f" % loss)
+
+            model.train()
+
+            train_cfg.save(job.location)
+            model.save(job.location)
+
+    log.section("Beginning training loop")
+    for i in range(train_cfg.batches):
+        is_checkpoint = i % 500 == 0
+        do_log = i == 0 or i == train_cfg.batches - 1 or i % 100 == 0
+
+        if is_checkpoint:
+            checkpoint(i)
+
+        if do_log:
+            log.debug("Batch %i / %i" % (i, train_cfg.batches))
 
         TT.profile("Batch")
 
@@ -54,12 +73,11 @@ def train():
             optim.step()
             optim.zero_grad()
 
-        if i % 100 == 0:
-            print(i, "%.6f" % loss.item())
+        if do_log:
+            log.debug("Loss: %.6f" % loss.item())
 
         TT.end_profile()
 
-
-    model.save('out')
+    checkpoint(train_cfg.batches)
 
     print(TT)
