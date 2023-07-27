@@ -47,8 +47,8 @@ def train(job: JobDescription):
                 with TT.profile("Forward"):
                     predicted_control = model(history_process, history_control, target_process)
                 loss = loss_fn(target_control, predicted_control)
-                log("Evaluation loss: %.6f" % loss.item())
-                train_results.eval_loss.append(loss.item())
+                log("Test loss: %.6f" % loss.item())
+                train_results.test_loss.append(loss.item())
 
             # Plot
             plot_loss(job.location, train_cfg, train_results)

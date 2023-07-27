@@ -33,7 +33,7 @@ class TrainResults(DataStorage):
 
     checkpoints:    list[int]
     train_loss:     list[float]
-    eval_loss:      list[float]
+    test_loss:      list[float]
 
     @classmethod
     def empty(cls) -> TrainResults:
