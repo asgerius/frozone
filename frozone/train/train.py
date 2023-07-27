@@ -7,12 +7,14 @@ import frozone.simulations as simulations
 from frozone import device
 from frozone.data.dataloader import simulation_dataloader as create_dataloader
 from frozone.model import Frozone
-from frozone.train import TrainConfig
+from frozone.plot.plot_train import plot_loss
+from frozone.train import TrainConfig, TrainResults
 
 
 def train(job: JobDescription):
 
     train_cfg = TrainConfig()
+    train_results = TrainResults.empty()
 
     env: Type[simulations.Simulation] = getattr(simulations, train_cfg.env)
     log("Got environment %s" % env.__name__)
@@ -34,20 +36,28 @@ def train(job: JobDescription):
     def checkpoint(batch_no: int):
         """ Performs checkpoint operations such as saving model progress, plotting, evaluation, etc. """
         log("Doing checkpoint at batch %i" % batch_no)
+        train_results.checkpoints.append(batch_no)
 
         with TT.profile("Checkpoint"), torch.inference_mode():
             model.eval()
 
+            # Evaluate
             with TT.profile("Evalutate"):
                 history_process, history_control, target_process, target_control = next(test_dataloader)
                 with TT.profile("Forward"):
                     predicted_control = model(history_process, history_control, target_process)
                 loss = loss_fn(target_control, predicted_control)
-                log("Evaluation loss: %.6f" % loss)
+                log("Evaluation loss: %.6f" % loss.item())
+                train_results.eval_loss.append(loss.item())
+
+            # Plot
+            plot_loss(job.location, train_cfg, train_results)
 
             model.train()
 
+            # Save training progress
             train_cfg.save(job.location)
+            train_results.save(job.location)
             model.save(job.location)
 
     log.section("Beginning training loop")
@@ -75,6 +85,7 @@ def train(job: JobDescription):
 
         if do_log:
             log.debug("Loss: %.6f" % loss.item())
+        train_results.train_loss.append(loss.item())
 
         TT.end_profile()
 

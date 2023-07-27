@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from pelutils import DataStorage
@@ -11,12 +13,12 @@ class TrainConfig(DataStorage):
 
     # Windows are given in seconds
     dt:                 float = 0.1
-    history_window:     float = 2
-    prediction_window:  float = 5
+    history_window:     float = 1
+    prediction_window:  float = 10
 
     # Hyperparameter stuff
-    batches:            int = 10000
-    batch_size:         int = 100
+    batches:            int = 100000
+    batch_size:         int = 200
 
     @property
     def history_window_steps(self) -> int:
@@ -25,3 +27,14 @@ class TrainConfig(DataStorage):
     @property
     def predict_window_steps(self) -> int:
         return int(self.prediction_window / self.dt)
+
+@dataclass
+class TrainResults(DataStorage):
+
+    checkpoints:    list[int]
+    train_loss:     list[float]
+    eval_loss:      list[float]
+
+    @classmethod
+    def empty(cls) -> TrainResults:
+        return TrainResults(list(), list(), list())
