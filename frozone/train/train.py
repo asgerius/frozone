@@ -6,7 +6,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators
 import frozone.simulations as simulations
 from frozone import device
 from frozone.data.dataloader import simulation_dataloader as create_dataloader
-from frozone.model import Frozone
+from frozone.model import FFFrozone
 from frozone.plot.plot_train import plot_loss
 from frozone.train import TrainConfig, TrainResults
 
@@ -19,13 +19,21 @@ def train(job: JobDescription):
     env: Type[simulations.Simulation] = getattr(simulations, train_cfg.env)
     log("Got environment %s" % env.__name__)
 
-    model = Frozone(Frozone.Config(
+    model = FFFrozone(FFFrozone.Config(
         len(env.ProcessVariables),
         len(env.ControlVariables),
-        train_cfg.history_window_steps, train_cfg.predict_window_steps, 3, 100,
+        1000,
+        train_cfg.history_window_steps, train_cfg.predict_window_steps, 3, 500,
     )).to(device)
     log("Built model", model)
-    log("Number of model parameters: %s" % thousands_seperators(model.numel()))
+    log(
+        "Number of model parameters",
+        "Latent:  %s" % thousands_seperators(model.latent_model.numel()),
+        "Control: %s" % thousands_seperators(model.control_model.numel()),
+        "Process: %s" % thousands_seperators(model.process_model.numel()),
+        "Total:   %s" % thousands_seperators(model.numel()),
+        sep="   \n"
+    )
 
     optim = torch.optim.AdamW(model.parameters(), lr=1e-5)
     loss_fn = torch.nn.MSELoss()
@@ -33,8 +41,11 @@ def train(job: JobDescription):
     train_dataloader = create_dataloader(env, train_cfg)
     test_dataloader = create_dataloader(env, train_cfg)
 
+    plot_counter = 1
     def checkpoint(batch_no: int):
         """ Performs checkpoint operations such as saving model progress, plotting, evaluation, etc. """
+        nonlocal plot_counter
+
         log("Doing checkpoint at batch %i" % batch_no)
         train_results.checkpoints.append(batch_no)
 
@@ -43,15 +54,21 @@ def train(job: JobDescription):
 
             # Evaluate
             with TT.profile("Evalutate"):
-                history_process, history_control, target_process, target_control = next(test_dataloader)
+                XH, UH, XF, UF = next(test_dataloader)
                 with TT.profile("Forward"):
-                    predicted_control = model(history_process, history_control, target_process)
-                loss = loss_fn(target_control, predicted_control)
+                    _, pred_UF, pred_XF = model(XH, UH, XF, UF)
+                loss_x = loss_fn(XF, pred_XF)
+                loss_u = loss_fn(UF, pred_UF)
+                loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
                 log("Test loss: %.6f" % loss.item())
+                train_results.test_loss_x.append(loss_x.item())
+                train_results.test_loss_u.append(loss_u.item())
                 train_results.test_loss.append(loss.item())
 
-            # Plot
-            plot_loss(job.location, train_cfg, train_results)
+            # Plot training stuff
+            if plot_counter == 0 or batch_no == train_cfg.batches:
+                plot_loss(job.location, train_cfg, train_results)
+            plot_counter = (plot_counter + 1) % 10
 
             model.train()
 
@@ -73,10 +90,12 @@ def train(job: JobDescription):
 
         TT.profile("Batch")
 
-        history_process, history_control, target_process, target_control = next(train_dataloader)
+        XH, UH, XF, UF = next(train_dataloader)
         with TT.profile("Forward"):
-            predicted_control = model(history_process, history_control, target_process)
-        loss = loss_fn(target_control, predicted_control)
+            _, pred_UF, pred_XF = model(XH, UH, XF, UF)
+        loss_x = loss_fn(XF, pred_XF)
+        loss_u = loss_fn(UF, pred_UF)
+        loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
         with TT.profile("Backward"):
             loss.backward()
         with TT.profile("Step"):
@@ -85,6 +104,8 @@ def train(job: JobDescription):
 
         if do_log:
             log.debug("Loss: %.6f" % loss.item())
+        train_results.train_loss_x.append(loss_x.item())
+        train_results.train_loss_u.append(loss_u.item())
         train_results.train_loss.append(loss.item())
 
         TT.end_profile()

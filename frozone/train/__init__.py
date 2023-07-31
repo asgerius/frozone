@@ -17,8 +17,11 @@ class TrainConfig(DataStorage):
     prediction_window:  float = 10
 
     # Hyperparameter stuff
-    batches:            int = 100000
-    batch_size:         int = 200
+    batches:            int = 50000
+    batch_size:         int = 500
+
+    # Loss weight - 0 for only process and 1 for only control
+    alpha:              float = 0.5
 
     @property
     def history_window_steps(self) -> int:
@@ -32,9 +35,13 @@ class TrainConfig(DataStorage):
 class TrainResults(DataStorage):
 
     checkpoints:    list[int]
+    train_loss_x:   list[float]
+    train_loss_u:   list[float]
     train_loss:     list[float]
+    test_loss_x:    list[float]
+    test_loss_u:    list[float]
     test_loss:      list[float]
 
     @classmethod
     def empty(cls) -> TrainResults:
-        return TrainResults(list(), list(), list())
+        return TrainResults(list(), list(), list(), list(), list(), list(), list())
