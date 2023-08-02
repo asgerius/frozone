@@ -63,24 +63,27 @@ class Simulation(abc.ABC):
         return process_states, hidden_states, control_states
 
     @abc.abstractclassmethod
-    def forward(cls, process_states: np.ndarray, hidden_states: np.ndarray, control_states: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
-        pass
+    def forward(cls, X: np.ndarray, Z: np.ndarray, U: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+        """ Does a single forward pass. All input matrices should have shape n x d, where n is the number of concurrent simulations
+        and d is the number of dimensions of that particular variable. """
 
     @classmethod
-    def forward_multiple(cls, process_states: np.ndarray, hidden_states: np.ndarray, control_states: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
-        n, iters = control_states.shape[:2]
+    def forward_multiple(cls, X: np.ndarray, Z: np.ndarray, U: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+        """ Same as forward, but does multiple forward iterations. X and Z have the same shape as in forward, but U has shape
+        n x iterations x d. """
+        n, iters = U.shape[:2]
 
-        tmp = process_states
-        process_states = np.empty((n, iters + 1, len(cls.ProcessVariables)), dtype=np.float32)
-        process_states[:, 0] = tmp
+        tmp = X
+        X = np.empty((n, iters + 1, len(cls.ProcessVariables)), dtype=np.float32)
+        X[:, 0] = tmp
 
-        tmp = hidden_states
-        hidden_states = np.empty((n, iters + 1, len(cls.HiddenVariables)), dtype=np.float32)
-        hidden_states[:, 0] = tmp
+        tmp = Z
+        Z = np.empty((n, iters + 1, len(cls.HiddenVariables)), dtype=np.float32)
+        Z[:, 0] = tmp
 
         for i in range(iters):
-            process_states[:, i + 1], hidden_states[:, i + 1] = cls.forward(process_states[:, i], hidden_states[:, i], control_states[:, i], dt)
+            X[:, i + 1], Z[:, i + 1] = cls.forward(X[:, i], Z[:, i], U[:, i], dt)
 
-        return process_states, hidden_states
+        return X, Z
 
 from .ball import Ball

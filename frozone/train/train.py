@@ -11,6 +11,10 @@ from frozone.plot.plot_train import plot_loss
 from frozone.train import TrainConfig, TrainResults
 
 
+def cuda_sync():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
 def train(job: JobDescription):
 
     train_cfg = TrainConfig()
@@ -23,7 +27,7 @@ def train(job: JobDescription):
         len(env.ProcessVariables),
         len(env.ControlVariables),
         1000,
-        train_cfg.history_window_steps, train_cfg.predict_window_steps, 3, 500,
+        train_cfg.history_steps, train_cfg.predict_steps, 3, 300,
     )).to(device)
     log("Built model", model)
     log(
@@ -42,6 +46,7 @@ def train(job: JobDescription):
     test_dataloader = create_dataloader(env, train_cfg)
 
     plot_counter = 1
+    @torch.inference_mode()
     def checkpoint(batch_no: int):
         """ Performs checkpoint operations such as saving model progress, plotting, evaluation, etc. """
         nonlocal plot_counter
@@ -49,12 +54,16 @@ def train(job: JobDescription):
         log("Doing checkpoint at batch %i" % batch_no)
         train_results.checkpoints.append(batch_no)
 
-        with TT.profile("Checkpoint"), torch.inference_mode():
+        with TT.profile("Checkpoint"):
             model.eval()
 
             # Evaluate
             with TT.profile("Evalutate"):
                 XH, UH, XF, UF = next(test_dataloader)
+                assert torch.all(UH >= 0)
+                assert torch.all(UH <= 1)
+                assert torch.all(UF >= 0)
+                assert torch.all(UF <= 1)
                 with TT.profile("Forward"):
                     _, pred_UF, pred_XF = model(XH, UH, XF, UF)
                 loss_x = loss_fn(XF, pred_XF)
@@ -77,7 +86,7 @@ def train(job: JobDescription):
             train_results.save(job.location)
             model.save(job.location)
 
-    log.section("Beginning training loop")
+    log.section("Beginning training loop", "Training for %s batches" % thousands_seperators(train_cfg.batches))
     for i in range(train_cfg.batches):
         is_checkpoint = i % 500 == 0
         do_log = i == 0 or i == train_cfg.batches - 1 or i % 100 == 0
@@ -93,14 +102,17 @@ def train(job: JobDescription):
         XH, UH, XF, UF = next(train_dataloader)
         with TT.profile("Forward"):
             _, pred_UF, pred_XF = model(XH, UH, XF, UF)
+            cuda_sync()
         loss_x = loss_fn(XF, pred_XF)
         loss_u = loss_fn(UF, pred_UF)
         loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
         with TT.profile("Backward"):
             loss.backward()
+            cuda_sync()
         with TT.profile("Step"):
             optim.step()
             optim.zero_grad()
+            cuda_sync()
 
         if do_log:
             log.debug("Loss: %.6f" % loss.item())

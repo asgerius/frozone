@@ -14,21 +14,21 @@ class TrainConfig(DataStorage):
     # Windows are given in seconds
     dt:                 float = 0.1
     history_window:     float = 1
-    prediction_window:  float = 10
+    prediction_window:  float = 5
 
     # Hyperparameter stuff
     batches:            int = 50000
-    batch_size:         int = 500
+    batch_size:         int = 300
 
     # Loss weight - 0 for only process and 1 for only control
     alpha:              float = 0.5
 
     @property
-    def history_window_steps(self) -> int:
+    def history_steps(self) -> int:
         return int(self.history_window / self.dt)
 
     @property
-    def predict_window_steps(self) -> int:
+    def predict_steps(self) -> int:
         return int(self.prediction_window / self.dt)
 
 @dataclass

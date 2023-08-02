@@ -46,13 +46,13 @@ class Ball(Simulation):
         return np.zeros((n, len(cls.HiddenVariables)), dtype=np.float32)
 
     @classmethod
-    def forward(self, process_states: np.ndarray, hidden_states: np.ndarray, control_states: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    def forward(self, X: np.ndarray, Z: np.ndarray, U: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
         mass = 2
         k_drag = 5
 
-        x, y = process_states.T
-        vx, vy = hidden_states.T
-        f0, f1, f2 = control_states.T
+        x, y = X.T
+        vx, vy = Z.T
+        f0, f1, f2 = U.T
 
         d = np.sqrt(x ** 2 + y ** 2)
         x_neg = x < 0

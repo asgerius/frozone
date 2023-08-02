@@ -13,26 +13,15 @@ from frozone.model import Frozone
 class FFFrozone(Frozone):
 
     @dataclass
-    class Config(DataStorage):
-        D: int  # Number of process variables
-        d: int  # Number of control variables
-        K: int  # Number of latent variables
-
-        h: int  # Number of history steps
-        f: int  # Number of prediction steps
+    class Config(Frozone.Config):
 
         num_hidden_layers: int
         layer_size: int
 
         def __post_init__(self):
-            assert self.D > 0
-            assert self.d > 0
-            assert self.h > 0
-            assert self.f > 0
+            super().__post_init__()
             assert self.num_hidden_layers >= 0
             assert self.layer_size > 0
-
-    config: Config
 
     def __init__(self, config: Config):
         super().__init__(config)
