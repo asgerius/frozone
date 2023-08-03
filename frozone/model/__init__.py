@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import os
 from dataclasses import dataclass
-from typing import Optional, Type
+from typing import Any, Optional, Type
 
 import torch
 import torch.nn as nn
@@ -34,7 +34,7 @@ class Frozone(nn.Module, abc.ABC):
     control_model: Frozone
     process_model: Frozone
 
-    def __init__(self, config: DataStorage):
+    def __init__(self, config: Config):
         super().__init__()
 
         self.config = config
@@ -48,6 +48,10 @@ class Frozone(nn.Module, abc.ABC):
         UF: Optional[torch.FloatTensor] = None,
     ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
         pass
+
+    def __call__(self, *args: Any, **kwds: Any) -> torch.FloatTensor:
+        """ This method implementation does not change anything, but it adds half-assed type support for forward calls. """
+        return super().__call__(*args, **kwds)
 
     def numel(self) -> int:
         """ Number of model parameters. Further docs here: https://pokemondb.net/pokedex/numel """

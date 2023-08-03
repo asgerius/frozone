@@ -18,7 +18,7 @@ class TrainConfig(DataStorage):
 
     # Hyperparameter stuff
     batches:            int = 50000
-    batch_size:         int = 300
+    batch_size:         int = 500
 
     # Loss weight - 0 for only process and 1 for only control
     alpha:              float = 0.5
