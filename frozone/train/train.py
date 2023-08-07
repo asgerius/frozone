@@ -26,12 +26,12 @@ def train(job: JobDescription):
     model = FFFrozone(FFFrozone.Config(
         D = len(env.ProcessVariables),
         d = len(env.ControlVariables),
-        k = 1200,
+        k = 1000,
         static_values_count = env.static_value_count,
         h = train_cfg.history_steps,
         f = train_cfg.predict_steps,
         num_hidden_layers = 3,
-        layer_size = 500,
+        layer_size = 300,
     )).to(device)
     log("Built model", model)
     log(

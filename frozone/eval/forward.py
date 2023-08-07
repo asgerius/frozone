@@ -100,8 +100,6 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
         model.process_model.requires_grad_(False)
         model.process_model.U_layer.requires_grad_(True)
         model.process_model.set_UF(pred_UF_d)
-        # print()
-        # print(index)
         for k in range(eval_cfg.gradient_steps):
             optim = torch.optim.AdamW(model.process_model.parameters(), lr=eval_cfg.gamma)
             pred_XF_d = model.process_model(pred_ZH_d, SF_d)
@@ -111,7 +109,6 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
             optim.step()
             optim.zero_grad()
             eval_results.forward_loss[-1].append(loss.item())
-            # print(loss.item())
 
         pred_UF_d = model.process_model.U_layer.data[0, -model.process_model.U_size:] \
             .detach() \
@@ -141,7 +138,7 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
     ))
 
 if __name__ == "__main__":
-    path = "out/2023-08-07_18-03-07"
+    path = "out/2023-08-07_18-47-52"
     train_cfg = TrainConfig.load(path)
     model = FFFrozone.load(path)
     eval_cfg = ForwardEvalConfig(train_cfg, 0.2, 40, 20, 5e-3)

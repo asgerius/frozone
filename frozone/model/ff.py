@@ -150,7 +150,6 @@ class _FFProcessModel(Frozone):
                 torch.zeros((batch_size, self.U_size)).to(device),
             ), dim=-1)
 
-            # breakpoint()
             x_ZH = self.linear(self.bnorm(x_ZH))
 
             x_UH = self.linear(self.bnorm(self.U_layer))
