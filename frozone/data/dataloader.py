@@ -17,33 +17,39 @@ def simulation_dataloader(
     train_cfg: TrainConfig,
     num_simulations = 1000,
     central_iters = 10000,
-) -> Generator[tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor], None, None]:
+) -> Generator[tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor], None, None]:
 
     iters = central_iters + train_cfg.history_steps + train_cfg.predict_steps
     with TT.profile("Generate new states"):
-        process_states, _, control_states = simulation.simulate(num_simulations, iters, train_cfg.dt)
+        X, _, U, S = simulation.simulate(num_simulations, iters, train_cfg.dt)
 
     while True:
         start_iter = np.random.uniform(train_cfg.history_steps, central_iters, train_cfg.batch_size)
         XH = np.empty((train_cfg.batch_size, train_cfg.history_steps, len(simulation.ProcessVariables)), dtype=np.float32)
         UH = np.empty((train_cfg.batch_size, train_cfg.history_steps - 1, len(simulation.ControlVariables)), dtype=np.float32)
+        SH = np.empty((train_cfg.batch_size, train_cfg.history_steps, len(simulation.StaticVariables)), dtype=int)
         XF = np.empty((train_cfg.batch_size, train_cfg.predict_steps, len(simulation.ProcessVariables)), dtype=np.float32)
         UF = np.empty((train_cfg.batch_size, train_cfg.predict_steps, len(simulation.ControlVariables)), dtype=np.float32)
+        SF = np.empty((train_cfg.batch_size, train_cfg.predict_steps, len(simulation.StaticVariables)), dtype=int)
 
         TT.profile("Sample")
         for i in range(train_cfg.batch_size):
             num_sim = np.random.randint(num_simulations)
             start_iter = np.random.randint(0, central_iters)
-            XH[i] = process_states[num_sim, start_iter:start_iter + train_cfg.history_steps]
-            UH[i] = control_states[num_sim, start_iter:start_iter + train_cfg.history_steps - 1]
-            XF[i] = process_states[num_sim, start_iter + train_cfg.history_steps:start_iter + train_cfg.history_steps + train_cfg.predict_steps]
-            UF[i] = control_states[num_sim, start_iter + train_cfg.history_steps - 1:start_iter + train_cfg.history_steps + train_cfg.predict_steps - 1]
+            XH[i] = X[num_sim, start_iter:start_iter + train_cfg.history_steps]
+            UH[i] = U[num_sim, start_iter:start_iter + train_cfg.history_steps - 1]
+            SH[i] = S[num_sim, start_iter:start_iter + train_cfg.history_steps]
+            XF[i] = X[num_sim, start_iter + train_cfg.history_steps:start_iter + train_cfg.history_steps + train_cfg.predict_steps]
+            UF[i] = U[num_sim, start_iter + train_cfg.history_steps - 1:start_iter + train_cfg.history_steps + train_cfg.predict_steps - 1]
+            SF[i] = S[num_sim, start_iter + train_cfg.history_steps:start_iter + train_cfg.history_steps + train_cfg.predict_steps]
         TT.end_profile()
 
         with TT.profile("To device"):
             XH = torch.from_numpy(XH).to(device)
             UH = torch.from_numpy(UH).to(device)
+            SH = torch.from_numpy(SH).to(device)
             XF = torch.from_numpy(XF).to(device)
             UF = torch.from_numpy(UF).to(device)
+            SF = torch.from_numpy(SF).to(device)
 
-        yield XH, UH, XF, UF
+        yield XH, UH, SH, XF, UF, SF

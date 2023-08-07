@@ -63,16 +63,18 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
     env: simulations.Simulation = getattr(simulations, train_cfg.env)
 
     # Simulate new
-    target_X, target_Z, target_U = env.simulate(1, eval_cfg.total_steps, train_cfg.dt)
+    target_X, target_Z, target_U, target_S = env.simulate(1, eval_cfg.total_steps, train_cfg.dt)
 
     # Only dealing with one simulation at a time, so discard first dimension
     target_X: np.ndarray = target_X[0]
     target_U: np.ndarray = target_U[0]
     target_Z: np.ndarray = target_Z[0]
+    target_S: np.ndarray = target_S[0]
 
     actual_X = target_X[:len(target_X) - train_cfg.predict_steps + eval_cfg.control_steps - 1].copy()
     actual_U = target_U[:len(target_U) - train_cfg.predict_steps + eval_cfg.control_steps - 1].copy()
     actual_Z = target_Z[:len(target_Z) - train_cfg.predict_steps + eval_cfg.control_steps - 1].copy()
+    actual_S = target_S[:len(target_S) - train_cfg.predict_steps + eval_cfg.control_steps - 1].copy()
 
     eval_results.forward_loss.append(list())
 
@@ -81,37 +83,49 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
 
         XH = actual_X[index : index + train_cfg.history_steps]
         UH = actual_U[index : index + train_cfg.history_steps - 1]
+        SH = actual_S[index : index + train_cfg.history_steps]
 
         XF = target_X[index + train_cfg.history_steps : index + train_cfg.history_steps + train_cfg.predict_steps]
+        SF = target_S[index + train_cfg.history_steps : index + train_cfg.history_steps + train_cfg.predict_steps]
 
         XH_d = torch.from_numpy(XH).to(device).unsqueeze(0)
         UH_d = torch.from_numpy(UH).to(device).unsqueeze(0)
+        SH_d = torch.from_numpy(SH).to(device).unsqueeze(0)
         XF_d = torch.from_numpy(XF).to(device).unsqueeze(0)
+        SF_d = torch.from_numpy(SF).to(device).unsqueeze(0)
 
         with torch.inference_mode():
-            pred_ZH_d, pred_UF_d, _ = model(XH_d, UH_d, XF_d)
+            pred_ZH_d, pred_UF_d, _ = model(XH_d, UH_d, SH_d, SF_d, XF_d)
 
         model.process_model.requires_grad_(False)
         model.process_model.U_layer.requires_grad_(True)
         model.process_model.set_UF(pred_UF_d)
+        # print()
+        # print(index)
         for k in range(eval_cfg.gradient_steps):
             optim = torch.optim.AdamW(model.process_model.parameters(), lr=eval_cfg.gamma)
-            pred_XF_d = model.process_model(pred_ZH_d)
+            pred_XF_d = model.process_model(pred_ZH_d, SF_d)
             loss = loss_fn(XF_d, pred_XF_d)
             loss.backward()
-            model.process_model.U_layer.grad[:, :model.config.K] = 0
+            model.process_model.U_layer.grad[:, :-model.process_model.U_size] = 0
             optim.step()
             optim.zero_grad()
             eval_results.forward_loss[-1].append(loss.item())
+            # print(loss.item())
 
-        pred_UF_d = model.process_model.U_layer.data[0, model.config.K:].detach().view(train_cfg.predict_steps, len(env.ControlVariables)).cpu().numpy()
+        pred_UF_d = model.process_model.U_layer.data[0, -model.process_model.U_size:] \
+            .detach() \
+            .view(train_cfg.predict_steps, len(env.ControlVariables)) \
+            .cpu() \
+            .numpy()
 
         control_slice = slice(index + train_cfg.history_steps - 1, index + train_cfg.history_steps + eval_cfg.control_steps - 1)
         actual_U[control_slice] = pred_UF_d[:eval_cfg.control_steps]
-        XC, ZC = env.forward_multiple(
+        XC, ZC, _ = env.forward_multiple(
             np.expand_dims(actual_X[index + train_cfg.history_steps - 1], 0),
-            np.expand_dims(actual_Z[index + train_cfg.history_steps - 1], 0),
             np.expand_dims(actual_U[control_slice], 0),
+            np.expand_dims(actual_Z[index + train_cfg.history_steps - 1], 0),
+            np.expand_dims(actual_S[index + train_cfg.history_steps - 1], 0),
             train_cfg.dt,
         )
         process_slice = slice(index + train_cfg.history_steps, index + train_cfg.history_steps + eval_cfg.control_steps)
@@ -127,17 +141,17 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
     ))
 
 if __name__ == "__main__":
-    path = "out/2023-08-03_01-36-53"
+    path = "out/2023-08-07_18-03-07"
     train_cfg = TrainConfig.load(path)
     model = FFFrozone.load(path)
-    eval_cfg = ForwardEvalConfig(train_cfg, 0.2, 40, 10, 2e-3)
+    eval_cfg = ForwardEvalConfig(train_cfg, 0.2, 40, 20, 5e-3)
 
     results_opt = ForwardEvalResults.empty()
     results_no_opt = ForwardEvalResults.empty()
 
     from tqdm import tqdm
 
-    n_opt = 20
+    n_opt = 30
     n_no_opt = 50
 
     for i in tqdm(range(n_opt)):

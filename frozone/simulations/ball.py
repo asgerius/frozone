@@ -22,8 +22,13 @@ class Ball(Simulation):
         VX = 0
         VY = 1
 
+    class StaticVariables(enum.IntEnum):
+        THRUST_TYPE = 0
+
+    static_value_count = [2 ** 3]
+
     @classmethod
-    def sample_init_process_vars(cls, n: int) -> np.ndarray:
+    def sample_init_process_vars(cls, n: int) -> tuple[np.ndarray, np.ndarray]:
         process_states = super().sample_init_process_vars(n)
         process_states[:, cls.ProcessVariables.X] = np.random.uniform(-0.2, 0.2, n)
         process_states[:, cls.ProcessVariables.Y] = np.random.uniform(-0.2, 0.2, n)
@@ -34,7 +39,7 @@ class Ball(Simulation):
         return np.zeros((n, len(cls.ControlVariables)), dtype=np.float32)
 
     @classmethod
-    def sample_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray, dt: float) -> np.ndarray:
+    def sample_new_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray, dt: float) -> np.ndarray:
         reg = 10
         f0 = np.random.normal(prev_control_states[:, 0], dt / reg)
         f1 = np.random.normal(prev_control_states[:, 1], dt / reg)
@@ -46,13 +51,22 @@ class Ball(Simulation):
         return np.zeros((n, len(cls.HiddenVariables)), dtype=np.float32)
 
     @classmethod
-    def forward(self, X: np.ndarray, Z: np.ndarray, U: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    def sample_init_static_vars(cls, n: int) -> np.ndarray:
+        static_states = super().sample_init_static_vars(n)
+        static_states[...] = np.random.randint(0, 8, static_states.shape)
+        return static_states
+
+    @classmethod
+    def forward(self, X: np.ndarray, U: np.ndarray, Z: np.ndarray, S: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         mass = 2
         k_drag = 5
 
         x, y = X.T
         vx, vy = Z.T
-        f0, f1, f2 = U.T
+        f0, f1, f2 = U.T.copy()
+        f0[np.bitwise_and(S.flat, 0b1)   == 0b1]   *= 0.97
+        f1[np.bitwise_and(S.flat, 0b10)  == 0b10]  *= 0.98
+        f2[np.bitwise_and(S.flat, 0b100) == 0b100] *= 0.99
 
         d = np.sqrt(x ** 2 + y ** 2)
         x_neg = x < 0
@@ -85,4 +99,4 @@ class Ball(Simulation):
         new_vx = vx + dt * Fx / mass
         new_vy = vy + dt * Fy / mass
 
-        return np.vstack((new_x, new_y)).T, np.vstack((new_vx, new_vy)).T
+        return np.vstack((new_x, new_y)).T, np.vstack((new_vx, new_vy)).T, S

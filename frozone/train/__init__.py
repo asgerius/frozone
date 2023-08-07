@@ -16,12 +16,17 @@ class TrainConfig(DataStorage):
     history_window:     float = 1
     prediction_window:  float = 5
 
-    # Hyperparameter stuff
+    # Training stuff
     batches:            int = 50000
     batch_size:         int = 500
 
     # Loss weight - 0 for only process and 1 for only control
     alpha:              float = 0.5
+
+    # Data augmentation
+    # Standard deviation of the generated noise
+    # This is given as a multiplier to the feature-wise standard deviation in the data
+    epsilon:            float = 0.05
 
     @property
     def history_steps(self) -> int:

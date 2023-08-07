@@ -19,7 +19,9 @@ class Frozone(nn.Module, abc.ABC):
 
         D: int  # Number of process variables
         d: int  # Number of control variables
-        K: int  # Number of latent variables
+        k: int  # Number of latent variables
+        # Number of possible values each static variable can take
+        static_values_count: list[int]
 
         h: int  # Number of history steps
         f: int  # Number of prediction steps
@@ -27,8 +29,14 @@ class Frozone(nn.Module, abc.ABC):
         def __post_init__(self):
             assert self.D > 0
             assert self.d > 0
+            assert self.K >= 0
+            assert self.k > 0
             assert self.h > 0
             assert self.f > 0
+
+        @property
+        def K(self) -> int:
+            return sum(self.static_values_count)
 
     latent_model: Frozone
     control_model: Frozone
@@ -44,6 +52,8 @@ class Frozone(nn.Module, abc.ABC):
         self,
         XH: torch.FloatTensor,
         UH: torch.FloatTensor,
+        SH: torch.LongTensor,
+        SF: torch.LongTensor,
         XF: Optional[torch.FloatTensor] = None,
         UF: Optional[torch.FloatTensor] = None,
     ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:

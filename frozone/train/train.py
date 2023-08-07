@@ -24,10 +24,14 @@ def train(job: JobDescription):
     log("Got environment %s" % env.__name__)
 
     model = FFFrozone(FFFrozone.Config(
-        len(env.ProcessVariables),
-        len(env.ControlVariables),
-        1000,
-        train_cfg.history_steps, train_cfg.predict_steps, 3, 300,
+        D = len(env.ProcessVariables),
+        d = len(env.ControlVariables),
+        k = 1200,
+        static_values_count = env.static_value_count,
+        h = train_cfg.history_steps,
+        f = train_cfg.predict_steps,
+        num_hidden_layers = 3,
+        layer_size = 500,
     )).to(device)
     log("Built model", model)
     log(
@@ -36,7 +40,7 @@ def train(job: JobDescription):
         "Control: %s" % thousands_seperators(model.control_model.numel()),
         "Process: %s" % thousands_seperators(model.process_model.numel()),
         "Total:   %s" % thousands_seperators(model.numel()),
-        sep="   \n"
+        sep="   \n",
     )
 
     optim = torch.optim.AdamW(model.parameters(), lr=1e-5)
@@ -59,13 +63,13 @@ def train(job: JobDescription):
 
             # Evaluate
             with TT.profile("Evalutate"):
-                XH, UH, XF, UF = next(test_dataloader)
+                XH, UH, SH, XF, UF, SF = next(test_dataloader)
                 assert torch.all(UH >= 0)
                 assert torch.all(UH <= 1)
                 assert torch.all(UF >= 0)
                 assert torch.all(UF <= 1)
                 with TT.profile("Forward"):
-                    _, pred_UF, pred_XF = model(XH, UH, XF, UF)
+                    _, pred_UF, pred_XF = model(XH, UH, SH, SF, XF, UF)
                 loss_x = loss_fn(XF, pred_XF)
                 loss_u = loss_fn(UF, pred_UF)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
@@ -99,9 +103,9 @@ def train(job: JobDescription):
 
         TT.profile("Batch")
 
-        XH, UH, XF, UF = next(train_dataloader)
+        XH, UH, SH, XF, UF, SF = next(train_dataloader)
         with TT.profile("Forward"):
-            _, pred_UF, pred_XF = model(XH, UH, XF, UF)
+            _, pred_UF, pred_XF = model(XH, UH, SH, SF, XF, UF)
             cuda_sync()
         loss_x = loss_fn(XF, pred_XF)
         loss_u = loss_fn(UF, pred_UF)
