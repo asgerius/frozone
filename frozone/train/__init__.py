@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from pelutils import DataStorage
@@ -19,6 +20,8 @@ class TrainConfig(DataStorage):
     # Training stuff
     batches:            int = 50000
     batch_size:         int = 500
+    # How many data points to include in each evaluation
+    eval_size:          int = 5000
 
     # Loss weight - 0 for only process and 1 for only control
     alpha:              float = 0.5
@@ -36,17 +39,24 @@ class TrainConfig(DataStorage):
     def predict_steps(self) -> int:
         return int(self.prediction_window / self.dt)
 
+    @property
+    def num_eval_batches(self) -> int:
+        return math.ceil(self.eval_size / self.batch_size)
+
 @dataclass
 class TrainResults(DataStorage):
 
-    checkpoints:    list[int]
-    train_loss_x:   list[float]
-    train_loss_u:   list[float]
-    train_loss:     list[float]
-    test_loss_x:    list[float]
-    test_loss_u:    list[float]
-    test_loss:      list[float]
+    checkpoints:        list[int]
+    train_loss_x:       list[float]
+    train_loss_u:       list[float]
+    train_loss:         list[float]
+    test_loss_x:        list[float]
+    test_loss_u:        list[float]
+    test_loss:          list[float]
+    test_loss_x_std:    list[float]
+    test_loss_u_std:    list[float]
+    test_loss_std:      list[float]
 
     @classmethod
     def empty(cls) -> TrainResults:
-        return TrainResults(list(), list(), list(), list(), list(), list(), list())
+        return TrainResults(list(), list(), list(), list(), list(), list(), list(), list(), list(), list())

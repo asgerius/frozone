@@ -1,5 +1,7 @@
+import math
 from typing import Type
 
+import numpy as np
 import torch
 from pelutils import TT, JobDescription, log, thousands_seperators
 
@@ -63,20 +65,23 @@ def train(job: JobDescription):
 
             # Evaluate
             with TT.profile("Evalutate"):
-                XH, UH, SH, XF, UF, SF = next(test_dataloader)
-                assert torch.all(UH >= 0)
-                assert torch.all(UH <= 1)
-                assert torch.all(UF >= 0)
-                assert torch.all(UF <= 1)
-                with TT.profile("Forward"):
-                    _, pred_UF, pred_XF = model(XH, UH, SH, SF, XF, UF)
-                loss_x = loss_fn(XF, pred_XF)
-                loss_u = loss_fn(UF, pred_UF)
-                loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
-                log("Test loss: %.6f" % loss.item())
-                train_results.test_loss_x.append(loss_x.item())
-                train_results.test_loss_u.append(loss_u.item())
-                train_results.test_loss.append(loss.item())
+                test_loss_x = np.empty(train_cfg.num_eval_batches)
+                test_loss_u = np.empty(train_cfg.num_eval_batches)
+                test_loss = np.empty(train_cfg.num_eval_batches)
+                for j in range(train_cfg.num_eval_batches):
+                    XH, UH, SH, XF, UF, SF = next(test_dataloader)
+                    with TT.profile("Forward"):
+                        _, pred_UF, pred_XF = model(XH, UH, SH, SF, XF, UF)
+                    test_loss_x[j] = loss_fn(XF, pred_XF).item()
+                    test_loss_u[j] = loss_fn(UF, pred_UF).item()
+                    test_loss[j] = (1 - train_cfg.alpha) * test_loss_x[j] + train_cfg.alpha * test_loss_u[j]
+                train_results.test_loss_x.append(test_loss_x.mean())
+                train_results.test_loss_u.append(test_loss_u.mean())
+                train_results.test_loss.append(test_loss.mean())
+                log("Test loss: %.6f" % train_results.test_loss[-1])
+                train_results.test_loss_x_std.append(test_loss_x.std(ddof=1) * math.sqrt(train_cfg.eval_size))
+                train_results.test_loss_u_std.append(test_loss_u.std(ddof=1) * math.sqrt(train_cfg.eval_size))
+                train_results.test_loss_std.append(test_loss.std(ddof=1) * math.sqrt(train_cfg.eval_size))
 
             # Plot training stuff
             if plot_counter == 0 or batch_no == train_cfg.batches:
