@@ -138,18 +138,18 @@ def forward_eval(eval_cfg: ForwardEvalConfig, model: Frozone, eval_results: Forw
     ))
 
 if __name__ == "__main__":
-    path = "out/2023-08-07_18-47-52"
+    path = "out/2023-08-07_20-27-23"
     train_cfg = TrainConfig.load(path)
     model = FFFrozone.load(path)
-    eval_cfg = ForwardEvalConfig(train_cfg, 0.2, 40, 20, 5e-3)
+    eval_cfg = ForwardEvalConfig(train_cfg, 0.2, 20, 5, 2e-3)
 
     results_opt = ForwardEvalResults.empty()
     results_no_opt = ForwardEvalResults.empty()
 
     from tqdm import tqdm
 
-    n_opt = 30
-    n_no_opt = 50
+    n_opt = 5
+    n_no_opt = 10
 
     for i in tqdm(range(n_opt)):
         forward_eval(eval_cfg, model, results_opt)

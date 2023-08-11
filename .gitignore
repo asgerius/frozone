@@ -6,6 +6,7 @@ local_*
 *.out
 .python-version
 
+data
 out
 *.png
 *.pdf
