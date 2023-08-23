@@ -21,7 +21,7 @@ class TrainConfig(DataStorage):
     batches:            int = 50000
     batch_size:         int = 500
     # How many data points to include in each evaluation
-    eval_size:          int = 5000
+    eval_size:          int = 10000
 
     # Loss weight - 0 for only process and 1 for only control
     alpha:              float = 0.5
@@ -32,11 +32,11 @@ class TrainConfig(DataStorage):
     epsilon:            float = 0.05
 
     @property
-    def history_steps(self) -> int:
+    def H(self) -> int:
         return int(self.history_window / self.dt)
 
     @property
-    def predict_steps(self) -> int:
+    def F(self) -> int:
         return int(self.prediction_window / self.dt)
 
     @property

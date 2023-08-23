@@ -3,8 +3,8 @@ from __future__ import annotations
 import abc
 import os
 from dataclasses import dataclass
-from typing import Any, Optional, Type
 
+import numpy as np
 import torch
 import torch.nn as nn
 from pelutils import DataStorage
@@ -12,56 +12,56 @@ from pelutils import DataStorage
 from frozone import device
 
 
-class Frozone(nn.Module, abc.ABC):
+@dataclass
+class FzConfig(DataStorage):
 
-    @dataclass
-    class Config(DataStorage):
+    Dx: int  # Number of process variables
+    Du: int  # Number of control variables
+    Ds: int  # Number of static variables after binary encoding
+    Dz: int  # Number of latent variables
 
-        D: int  # Number of process variables
-        d: int  # Number of control variables
-        k: int  # Number of latent variables
-        # Number of possible values each static variable can take
-        static_values_count: list[int]
+    H: int  # Number of history steps
+    F: int  # Number of prediction steps
 
-        h: int  # Number of history steps
-        f: int  # Number of prediction steps
+    history_encoder_name:  str
+    target_encoder_name:   str
+    dynamics_network_name: str
+    control_network_name:  str
 
-        def __post_init__(self):
-            assert self.D > 0
-            assert self.d > 0
-            assert self.K >= 0
-            assert self.k > 0
-            assert self.h > 0
-            assert self.f > 0
+    fc_hidden_num:  int
+    fc_hidden_size: int
 
-        @property
-        def K(self) -> int:
-            return sum(self.static_values_count)
+    dropout_p: float = 0
+    activation_fn: str = "ReLU"
 
-    latent_model: Frozone
-    control_model: Frozone
-    process_model: Frozone
+    def __post_init__(self):
+        assert self.Dx > 0
+        assert self.Du > 0
+        assert self.Ds >= 0
+        assert self.Dz > 0
+        assert self.H > 0
+        assert self.F > 0
 
-    def __init__(self, config: Config):
+        assert self.fc_hidden_num > 0
+
+        assert 0 <= self.dropout_p <= 1
+
+    def get_activation_fn(self) -> nn.Module:
+        return getattr(nn, self.activation_fn)()
+
+class _FloatzoneModule(nn.Module, abc.ABC):
+
+    def __init__(self, config: FzConfig):
         super().__init__()
 
         self.config = config
 
-    @abc.abstractmethod
-    def forward(
-        self,
-        XH: torch.FloatTensor,
-        UH: torch.FloatTensor,
-        SH: torch.LongTensor,
-        SF: torch.LongTensor,
-        XF: Optional[torch.FloatTensor] = None,
-        UF: Optional[torch.FloatTensor] = None,
-    ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
-        pass
-
-    def __call__(self, *args: Any, **kwds: Any) -> torch.FloatTensor:
-        """ This method implementation does not change anything, but it adds half-assed type support for forward calls. """
-        return super().__call__(*args, **kwds)
+    @classmethod
+    def concat_to_feature_vec(cls, *tensors: torch.FloatTensor):
+        """ Concatenates input tensors to feature vectors. Batches in first dimension are respected. """
+        batch_size = tensors[0].shape[0]
+        assert all(tensor.shape[0] == batch_size for tensor in tensors)
+        return torch.concat([tensor.view(batch_size, -1) for tensor in tensors], dim=-1)
 
     def numel(self) -> int:
         """ Number of model parameters. Further docs here: https://pokemondb.net/pokedex/numel """
@@ -73,13 +73,31 @@ class Frozone(nn.Module, abc.ABC):
 
     def save(self, path: str):
         torch.save(self.state_dict(), os.path.join(path, self._state_dict_file_name()))
-        self.config.save(path, self.__class__.__name__ + "_" + self.Config.__name__)
+        self.config.save(path, self.__class__.__name__)
 
     @classmethod
-    def load(cls, path: str) -> Frozone:
-        config = cls.Config.load(path, cls.__name__ + "_" + cls.Config.__name__)
+    def load(cls, path: str) -> _FloatzoneModule:
+        config = FzConfig.load(path, cls.__name__)
         model = cls(config).to(device)
         model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name()), map_location=device))
         return model
 
-from .ff import FFFrozone
+    def build_linear_layers(self, in_size: int, out_size: int) -> list[nn.Module]:
+        layer_sizes = [in_size, *[self.config.fc_hidden_size] * self.config.fc_hidden_num, out_size]
+
+        modules = list()
+        modules.append(nn.BatchNorm1d(layer_sizes[0]))
+
+        for i, (in_size, out_size) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
+            modules.append(nn.Linear(in_size, out_size))
+
+            is_last = i == len(layer_sizes) - 2
+            if not is_last:
+                modules += (
+                    self.config.get_activation_fn(),
+                    nn.BatchNorm1d(out_size),
+                    nn.Dropout1d(p=self.config.dropout_p),
+                )
+
+        return modules
+

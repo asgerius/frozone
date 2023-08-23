@@ -5,10 +5,10 @@ import numpy as np
 import torch
 from pelutils import TT, JobDescription, log, thousands_seperators
 
-import frozone.simulations as simulations
+import frozone.environments as environments
 from frozone import device
 from frozone.data.dataloader import simulation_dataloader as create_dataloader
-from frozone.model import FFFrozone
+from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss
 from frozone.train import TrainConfig, TrainResults
 
@@ -22,26 +22,32 @@ def train(job: JobDescription):
     train_cfg = TrainConfig()
     train_results = TrainResults.empty()
 
-    env: Type[simulations.Simulation] = getattr(simulations, train_cfg.env)
+    env: Type[environments.Environment] = getattr(environments, train_cfg.env)
     log("Got environment %s" % env.__name__)
 
-    model = FFFrozone(FFFrozone.Config(
-        D = len(env.ProcessVariables),
-        d = len(env.ControlVariables),
-        k = 1000,
-        static_values_count = env.static_value_count,
-        h = train_cfg.history_steps,
-        f = train_cfg.predict_steps,
-        num_hidden_layers = 3,
-        layer_size = 300,
+    model = FzNetwork(FzConfig(
+        Dx = len(env.XLabels),
+        Du = len(env.ULabels),
+        Dz = 800,
+        Ds = sum(env.S_bin_count),
+        H = train_cfg.H,
+        F = train_cfg.F,
+        history_encoder_name  = "FullyConnected",
+        target_encoder_name   = "FullyConnected",
+        dynamics_network_name = "FullyConnected",
+        control_network_name  = "FullyConnected",
+        fc_hidden_num = 3,
+        fc_hidden_size = 500,
+        dropout_p = 0.0,
     )).to(device)
-    log("Built model", model)
+    log.debug("Built model", model)
     log(
         "Number of model parameters",
-        "Latent:  %s" % thousands_seperators(model.latent_model.numel()),
-        "Control: %s" % thousands_seperators(model.control_model.numel()),
-        "Process: %s" % thousands_seperators(model.process_model.numel()),
-        "Total:   %s" % thousands_seperators(model.numel()),
+        "History encoder:  %s" % thousands_seperators(model.history_encoder.numel()),
+        "Target encoder:   %s" % thousands_seperators(model.target_encoder.numel()),
+        "Dynamics network: %s" % thousands_seperators(model.dynamics_network.numel()),
+        "Control network:  %s" % thousands_seperators(model.control_network.numel()),
+        "Total:            %s" % thousands_seperators(model.numel()),
         sep="   \n",
     )
 
@@ -69,11 +75,11 @@ def train(job: JobDescription):
                 test_loss_u = np.empty(train_cfg.num_eval_batches)
                 test_loss = np.empty(train_cfg.num_eval_batches)
                 for j in range(train_cfg.num_eval_batches):
-                    XH, UH, SH, XF, UF, SF = next(test_dataloader)
+                    Xh, Uh, Sh, Xf, Sf, u, s = next(test_dataloader)
                     with TT.profile("Forward"):
-                        _, pred_UF, pred_XF = model(XH, UH, SH, SF, XF, UF)
-                    test_loss_x[j] = loss_fn(XF, pred_XF).item()
-                    test_loss_u[j] = loss_fn(UF, pred_UF).item()
+                        _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
+                    test_loss_x[j] = loss_fn(Xf[:, 1], pred_x).item()
+                    test_loss_u[j] = loss_fn(u, pred_u).item()
                     test_loss[j] = (1 - train_cfg.alpha) * test_loss_x[j] + train_cfg.alpha * test_loss_u[j]
                 train_results.test_loss_x.append(test_loss_x.mean())
                 train_results.test_loss_u.append(test_loss_u.mean())
@@ -85,6 +91,7 @@ def train(job: JobDescription):
 
             # Plot training stuff
             if plot_counter == 0 or batch_no == train_cfg.batches:
+                log("Plotting training progress")
                 plot_loss(job.location, train_cfg, train_results)
             plot_counter = (plot_counter + 1) % 10
 
@@ -108,12 +115,12 @@ def train(job: JobDescription):
 
         TT.profile("Batch")
 
-        XH, UH, SH, XF, UF, SF = next(train_dataloader)
+        Xh, Uh, Sh, Xf, Sf, u, s = next(train_dataloader)
         with TT.profile("Forward"):
-            _, pred_UF, pred_XF = model(XH, UH, SH, SF, XF, UF)
+            _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
             cuda_sync()
-        loss_x = loss_fn(XF, pred_XF)
-        loss_u = loss_fn(UF, pred_UF)
+        loss_x = loss_fn(Xf[:, 1], pred_x)
+        loss_u = loss_fn(u, pred_u)
         loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
         with TT.profile("Backward"):
             loss.backward()
@@ -133,4 +140,4 @@ def train(job: JobDescription):
 
     checkpoint(train_cfg.batches)
 
-    print(TT)
+    log(TT)
