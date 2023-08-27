@@ -5,3 +5,5 @@ torch==2.0.1
 # For CPU
 # --index-url https://download.pytorch.org/whl/cpu
 pelutils[ds]==3.0.0a1
+matplotlib==3.7.2
+tqdm==4.65.0
