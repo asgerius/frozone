@@ -6,6 +6,7 @@ local_*
 *.out
 .python-version
 
+/configs
 /data
 /out
 *.png
