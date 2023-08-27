@@ -96,7 +96,7 @@ class _FloatzoneModule(nn.Module, abc.ABC):
                 modules += (
                     self.config.get_activation_fn(),
                     nn.BatchNorm1d(out_size),
-                    nn.Dropout1d(p=self.config.dropout_p),
+                    nn.Dropout(p=self.config.dropout_p),
                 )
 
         return modules
