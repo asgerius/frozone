@@ -25,3 +25,12 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
 
         plt.legend(loc=1)
         plt.grid()
+
+def plot_lr(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
+    with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _save_folder, "lr.png")):
+        plt.plot(train_results.lr)
+
+        plt.xlabel("Batch")
+        plt.ylabel("Learning rate")
+
+        plt.grid()
