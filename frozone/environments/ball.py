@@ -69,9 +69,9 @@ class Ball(Environment):
         vx, vy = Z.T
         f0, f1, f2 = U.T.copy()
 
-        f0[S[:, 0].astype(bool)] *= 1#0.97
-        f1[S[:, 1].astype(bool)] *= 1#0.98
-        f2[S[:, 2].astype(bool)] *= 1#0.99
+        f0[S[:, 0].astype(bool)] *= 0.97
+        f1[S[:, 1].astype(bool)] *= 0.98
+        f2[S[:, 2].astype(bool)] *= 0.99
 
         d = np.sqrt(x ** 2 + y ** 2)
         x_neg = x < 0
