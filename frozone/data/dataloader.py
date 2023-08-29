@@ -24,7 +24,6 @@ def simulation_dataloader(
         X, _, U, S = simulation.simulate(num_simulations, iters, train_cfg.dt)
 
     while True:
-        start_iter = np.random.uniform(train_cfg.H, central_iters, train_cfg.batch_size)
         Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(simulation.XLabels)), dtype=Environment.X_dtype)
         Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(simulation.ULabels)), dtype=Environment.U_dtype)
         Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(simulation.S_bin_count)), dtype=Environment.S_dtype)
@@ -34,16 +33,16 @@ def simulation_dataloader(
         s = np.empty((train_cfg.batch_size, 2, sum(simulation.S_bin_count)), dtype=Environment.S_dtype)
 
         TT.profile("Sample")
+        sim_nums = np.random.randint(0, num_simulations, train_cfg.batch_size)
+        start_iters = np.random.randint(0, central_iters, train_cfg.batch_size)
         for i in range(train_cfg.batch_size):
-            num_sim = np.random.randint(num_simulations)
-            start_iter = np.random.randint(0, central_iters)
-            Xh[i] = X[num_sim, start_iter:start_iter + train_cfg.H]
-            Uh[i] = U[num_sim, start_iter:start_iter + train_cfg.H]
-            Sh[i] = S[num_sim, start_iter:start_iter + train_cfg.H]
-            Xf[i] = X[num_sim, start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
-            Sf[i] = S[num_sim, start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
-            u[i] = U[num_sim, start_iter + train_cfg.H]
-            s[i] = S[num_sim, start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
+            Xh[i] = X[sim_nums[i], start_iters[i]:start_iters[i] + train_cfg.H]
+            Uh[i] = U[sim_nums[i], start_iters[i]:start_iters[i] + train_cfg.H]
+            Sh[i] = S[sim_nums[i], start_iters[i]:start_iters[i] + train_cfg.H]
+            Xf[i] = X[sim_nums[i], start_iters[i] + train_cfg.H:start_iters[i] + train_cfg.H + train_cfg.F]
+            Sf[i] = S[sim_nums[i], start_iters[i] + train_cfg.H:start_iters[i] + train_cfg.H + train_cfg.F]
+            u[i]  = U[sim_nums[i], start_iters[i] + train_cfg.H]
+            s[i]  = S[sim_nums[i], start_iters[i] + train_cfg.H:start_iters[i] + train_cfg.H + 2]
         TT.end_profile()
 
         with TT.profile("To device"):
