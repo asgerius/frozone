@@ -21,15 +21,17 @@ class FzConfig(DataStorage):
     Dz: int  # Number of latent variables
 
     H: int  # Number of history steps
-    F: int  # Number of prediction steps
+    F: int  # Number of target steps
 
     history_encoder_name:  str
     target_encoder_name:   str
     dynamics_network_name: str
     control_network_name:  str
 
-    fc_hidden_num:  int
-    fc_hidden_size: int
+    fc_layer_num:  int
+    fc_layer_size: int
+
+    resnext_cardinality: int
 
     dropout_p: float = 0
     activation_fn: str = "ReLU"
@@ -42,12 +44,43 @@ class FzConfig(DataStorage):
         assert self.H > 0
         assert self.F > 0
 
-        assert self.fc_hidden_num > 0
+        assert self.fc_layer_num > 0
+        assert self.fc_layer_size > 0
+
+        assert self.resnext_cardinality > 0
 
         assert 0 <= self.dropout_p <= 1
 
     def get_activation_fn(self) -> nn.Module:
         return getattr(nn, self.activation_fn)()
+
+class ResnextBlock(nn.Module):
+    """ ResNeXt block as proposed in https://arxiv.org/pdf/1611.05431.pdf.
+    Each residual block uses the PreResNet architecture from https://arxiv.org/pdf/1603.05027.pdf.
+    The ordering of batch normalization and activation function is changed though. See
+    https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout. """
+
+    def __init__(self, size: int, config: FzConfig):
+        super().__init__()
+
+        self.config = config
+
+        for i in range(config.resnext_cardinality):
+            setattr(self, f"resnext_{i}", nn.Sequential(
+                # config.get_activation_fn(),
+                # nn.BatchNorm1d(size),
+                nn.Linear(size, size),
+                config.get_activation_fn(),
+                nn.BatchNorm1d(size),
+                nn.Linear(size, size),
+            ))
+
+    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
+        Fx = torch.zeros_like(x)
+        for i in range(self.config.resnext_cardinality):
+            Fx += getattr(self, f"resnext_{i}")(x)
+
+        return x + Fx
 
 class _FloatzoneModule(nn.Module, abc.ABC):
 
@@ -82,8 +115,9 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name()), map_location=device))
         return model
 
-    def build_linear_layers(self, in_size: int, out_size: int) -> list[nn.Module]:
-        layer_sizes = [in_size, *[self.config.fc_hidden_size] * self.config.fc_hidden_num, out_size]
+    def build_fully_connected(self, in_size: int, out_size: int) -> list[nn.Module]:
+        """ Builds consecutive modules for a fully connected network. """
+        layer_sizes = [in_size, *[self.config.fc_layer_size] * self.config.fc_layer_num, out_size]
 
         modules = list()
         modules.append(nn.BatchNorm1d(layer_sizes[0]))
@@ -101,3 +135,31 @@ class _FloatzoneModule(nn.Module, abc.ABC):
 
         return modules
 
+    def build_resnext(self, in_size: int, out_size: int) -> list[nn.Module]:
+        """ Same as a build_fully_connected, but with aggregated residual blocks as described in
+        https://arxiv.org/pdf/1512.03385.pdf (ResNet) and https://arxiv.org/pdf/1611.05431.pdf (ResNeXt).
+
+        For simplicity, this reuses the fc_layer_num and fc_layer_size config parameters for the blocks.
+        A linear layer is added at each end to reshape the data into the appropriate shapes. """
+
+        modules = list()
+        modules.append(nn.BatchNorm1d(in_size))
+
+        def add_intermediate_ops():
+            nonlocal modules
+            modules += (
+                self.config.get_activation_fn(),
+                nn.BatchNorm1d(self.config.fc_layer_size),
+                nn.Dropout(p=self.config.dropout_p),
+            )
+
+        modules.append(nn.Linear(in_size, self.config.fc_layer_size))
+        add_intermediate_ops()
+
+        for i in range(self.config.fc_layer_num):
+            modules.append(ResnextBlock(self.config.fc_layer_size, self.config))
+            add_intermediate_ops()
+
+        modules.append(nn.Linear(self.config.fc_layer_size, out_size))
+
+        return modules

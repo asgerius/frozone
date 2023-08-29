@@ -32,7 +32,7 @@ class Environment(abc.ABC):
     def __init_subclass__(cls):
         super().__init_subclass__()
         assert len(cls.SLabels) == len(cls.S_bin_count)
-        assert all(x >= 1 for x in cls.S_bin_count)
+        # assert all(x >= 1 for x in cls.S_bin_count)
 
     @abc.abstractclassmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:

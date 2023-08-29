@@ -18,10 +18,11 @@ class TrainConfig(DataStorage):
     prediction_window:  float = 5
 
     # Training stuff
-    batches:            int = 50000
-    batch_size:         int = 500
+    batches:            int = 15000
+    batch_size:         int = 200
+    lr:                 float = 1e-3
     # How many data points to include in each evaluation
-    eval_size:          int = 10000
+    eval_size:          int = 15000
 
     # Loss weight - 0 for only process and 1 for only control
     alpha:              float = 0.5
@@ -56,7 +57,8 @@ class TrainResults(DataStorage):
     test_loss_x_std:    list[float]
     test_loss_u_std:    list[float]
     test_loss_std:      list[float]
+    lr:                 list[float]
 
     @classmethod
     def empty(cls) -> TrainResults:
-        return TrainResults(list(), list(), list(), list(), list(), list(), list(), list(), list(), list())
+        return TrainResults(list(), list(), list(), list(), list(), list(), list(), list(), list(), list(), list())

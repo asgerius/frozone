@@ -9,13 +9,21 @@ import frozone.environments as environments
 from frozone import device
 from frozone.data.dataloader import simulation_dataloader as create_dataloader
 from frozone.model.floatzone_network import FzConfig, FzNetwork
-from frozone.plot.plot_train import plot_loss
+from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults
 
 
 def cuda_sync():
     if torch.cuda.is_available():
         torch.cuda.synchronize()
+
+def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
+    return torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr = config.lr,
+        epochs = TrainConfig.batches,
+        steps_per_epoch = 1,
+    )
 
 def train(job: JobDescription):
 
@@ -28,7 +36,7 @@ def train(job: JobDescription):
     model = FzNetwork(FzConfig(
         Dx = len(env.XLabels),
         Du = len(env.ULabels),
-        Dz = 800,
+        Dz = 500,
         Ds = sum(env.S_bin_count),
         H = train_cfg.H,
         F = train_cfg.F,
@@ -36,8 +44,9 @@ def train(job: JobDescription):
         target_encoder_name   = "FullyConnected",
         dynamics_network_name = "FullyConnected",
         control_network_name  = "FullyConnected",
-        fc_hidden_num = 3,
-        fc_hidden_size = 500,
+        fc_layer_num = 2,
+        fc_layer_size = 300,
+        resnext_cardinality = 1,
         dropout_p = 0.0,
     )).to(device)
     log.debug("Built model", model)
@@ -51,7 +60,8 @@ def train(job: JobDescription):
         sep="   \n",
     )
 
-    optim = torch.optim.AdamW(model.parameters(), lr=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr)
+    scheduler = build_lr_scheduler(train_cfg, optimizer)
     loss_fn = torch.nn.MSELoss()
 
     train_dataloader = create_dataloader(env, train_cfg)
@@ -84,7 +94,11 @@ def train(job: JobDescription):
                 train_results.test_loss_x.append(test_loss_x.mean())
                 train_results.test_loss_u.append(test_loss_u.mean())
                 train_results.test_loss.append(test_loss.mean())
-                log("Test loss: %.6f" % train_results.test_loss[-1])
+                log(
+                    "Test loss X: %.6f" % train_results.test_loss_x[-1],
+                    "Test loss U: %.6f" % train_results.test_loss_u[-1],
+                    "Test loss:   %.6f" % train_results.test_loss[-1],
+                )
                 train_results.test_loss_x_std.append(test_loss_x.std(ddof=1) * math.sqrt(train_cfg.eval_size))
                 train_results.test_loss_u_std.append(test_loss_u.std(ddof=1) * math.sqrt(train_cfg.eval_size))
                 train_results.test_loss_std.append(test_loss.std(ddof=1) * math.sqrt(train_cfg.eval_size))
@@ -93,6 +107,7 @@ def train(job: JobDescription):
             if plot_counter == 0 or batch_no == train_cfg.batches:
                 log("Plotting training progress")
                 plot_loss(job.location, train_cfg, train_results)
+                plot_lr(job.location, train_cfg, train_results)
             plot_counter = (plot_counter + 1) % 10
 
             model.train()
@@ -115,6 +130,8 @@ def train(job: JobDescription):
 
         TT.profile("Batch")
 
+        train_results.lr.append(scheduler.get_last_lr())
+
         Xh, Uh, Sh, Xf, Sf, u, s = next(train_dataloader)
         with TT.profile("Forward"):
             _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
@@ -126,8 +143,9 @@ def train(job: JobDescription):
             loss.backward()
             cuda_sync()
         with TT.profile("Step"):
-            optim.step()
-            optim.zero_grad()
+            optimizer.step()
+            optimizer.zero_grad()
+            scheduler.step()
             cuda_sync()
 
         if do_log:
