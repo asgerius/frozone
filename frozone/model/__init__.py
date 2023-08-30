@@ -120,7 +120,6 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         layer_sizes = [in_size, *[self.config.fc_layer_size] * self.config.fc_layer_num, out_size]
 
         modules = list()
-        modules.append(nn.BatchNorm1d(layer_sizes[0]))
 
         for i, (in_size, out_size) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
             modules.append(nn.Linear(in_size, out_size))
@@ -143,7 +142,6 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         A linear layer is added at each end to reshape the data into the appropriate shapes. """
 
         modules = list()
-        modules.append(nn.BatchNorm1d(in_size))
 
         def add_intermediate_ops():
             nonlocal modules
