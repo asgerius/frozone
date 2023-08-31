@@ -1,4 +1,6 @@
 import math
+import os
+from glob import glob as glob  # glob
 from typing import Type
 
 import numpy as np
@@ -7,7 +9,8 @@ from pelutils import TT, JobDescription, log, thousands_seperators
 
 import frozone.environments as environments
 from frozone import device
-from frozone.data.dataloader import simulation_dataloader as create_dataloader
+from frozone.data.dataloader import dataloader, set_mean_std, processed_data_cycler
+from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults
@@ -46,7 +49,7 @@ def train(job: JobDescription):
         control_network_name  = "FullyConnected",
         fc_layer_num = 2,
         fc_layer_size = 300,
-        resnext_cardinality = 1,
+        resnext_cardinality = 2,
         dropout_p = 0.0,
     )).to(device)
     log.debug("Built model", model)
@@ -62,10 +65,21 @@ def train(job: JobDescription):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr)
     scheduler = build_lr_scheduler(train_cfg, optimizer)
-    loss_fn = torch.nn.MSELoss()
+    loss_fn = torch.nn.L1Loss()
 
-    train_dataloader = create_dataloader(env, train_cfg)
-    test_dataloader = create_dataloader(env, train_cfg)
+    train_npz_files = glob(os.path.join(train_cfg.data_path, PROCESSED_SUBDIR, TRAIN_SUBDIR, "**", "*.npz"), recursive=True)
+    test_npz_files = glob(os.path.join(train_cfg.data_path, PROCESSED_SUBDIR, TEST_SUBDIR, "**", "*.npz"), recursive=True)
+    log(
+        "Found data files",
+        "Train: %s (%.2f %%)" % (thousands_seperators(len(train_npz_files)), 100 * len(train_npz_files) / (len(train_npz_files) + len(test_npz_files))),
+        "Test:  %s (%.2f %%)" % (thousands_seperators(len(test_npz_files)), 100 * len(test_npz_files) / (len(train_npz_files) + len(test_npz_files))),
+        sep="    \n",
+    )
+    log("Calculating feature-wise mean and standard deviation")
+    with TT.profile("Calculate mean and std."):
+        set_mean_std(len(train_npz_files), env, train_results, processed_data_cycler(train_npz_files))
+    train_dataloader = dataloader(env, train_cfg, train_results, train_npz_files)
+    test_dataloader = dataloader(env, train_cfg, train_results, test_npz_files)
 
     plot_counter = 1
     @torch.inference_mode()
@@ -108,7 +122,7 @@ def train(job: JobDescription):
                 log("Plotting training progress")
                 plot_loss(job.location, train_cfg, train_results)
                 plot_lr(job.location, train_cfg, train_results)
-            plot_counter = (plot_counter + 1) % 10
+            plot_counter = (plot_counter + 1) % 5
 
             model.train()
 
@@ -119,7 +133,7 @@ def train(job: JobDescription):
 
     log.section("Beginning training loop", "Training for %s batches" % thousands_seperators(train_cfg.batches))
     for i in range(train_cfg.batches):
-        is_checkpoint = i % 500 == 0
+        is_checkpoint = i % 1000 == 0
         do_log = i == 0 or i == train_cfg.batches - 1 or i % 100 == 0
 
         if is_checkpoint:
