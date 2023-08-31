@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 import torch
+import torch.nn as nn
 
 import frozone.model.history_encoders as history_encoders
 import frozone.model.target_encoders as target_encoders
@@ -19,6 +20,9 @@ class FzNetwork(_FloatzoneModule):
 
     def __init__(self, config: _FloatzoneModule.Config):
         super().__init__(config)
+
+        self.bnorm_Sh = nn.BatchNorm1d(config.Ds)
+        self.bnorm_Sf = nn.BatchNorm1d(config.Ds)
 
         self.history_encoder  = getattr(history_encoders,  self.config.history_encoder_name)(config)
         self.target_encoder   = getattr(target_encoders,   self.config.target_encoder_name)(config)
@@ -48,8 +52,8 @@ class FzNetwork(_FloatzoneModule):
         u: Optional[torch.FloatTensor] = None,
         s: Optional[torch.FloatTensor] = None,
     ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], torch.FloatTensor]:
-        z1 = self.history_encoder(Xh, Uh, Sh)
-        z2 = self.target_encoder(Xf, Sf)
+        z1 = self.history_encoder(Xh, Uh, self.bnorm_Sh(Sh))
+        z2 = self.target_encoder(Xf, self.bnorm_Sf(Sf))
 
         if u is not None:
             assert s is not None
