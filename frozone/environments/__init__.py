@@ -58,6 +58,9 @@ class Environment(abc.ABC):
 
     @classmethod
     def simulate(cls, n: int, iters: int, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if not cls.is_simulation:
+            raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
+
         X = np.empty((n, iters + 1, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
 
@@ -98,6 +101,9 @@ class Environment(abc.ABC):
     def forward_multiple(cls, X: np.ndarray, U: np.ndarray, Z: np.ndarray, S: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Same as forward, but does multiple forward iterations. X, Z, and U have the same shape as in forward, but U has shape
         n x iterations x d. """
+        if not cls.is_simulation:
+            raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
+
         n, iters = U.shape[:2]
 
         tmp = X
@@ -116,10 +122,6 @@ class Environment(abc.ABC):
             X[:, i + 1], Z[:, i + 1], S[:, i + 1] = cls.forward(X[:, i], U[:, i], Z[:, i], S[:, i], dt)
 
         return X, Z, S
-
-    def load_data(path: str) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
-        """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which
-        is a numpy array of shape time steps x """
 
 from .ball import Ball
 from .floatzone import FloatZone
