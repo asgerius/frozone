@@ -7,7 +7,7 @@ local_*
 .python-version
 
 /configs
-/data
+/data*
 /out
 *.png
 *.pdf
