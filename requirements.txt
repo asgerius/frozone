@@ -7,3 +7,4 @@ torch==2.0.1
 pelutils[ds]==3.0.0a1
 matplotlib==3.7.2
 tqdm==4.65.0
+pandas==2.1.0
