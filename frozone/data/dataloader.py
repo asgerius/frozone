@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Generator, Type
+import random
+from copy import copy
+from typing import Generator, Optional, Tuple, Type
 
 import numpy as np
 import torch
@@ -8,50 +10,133 @@ from pelutils import TT
 
 from frozone import device
 from frozone.environments import Environment
-from frozone.train import TrainConfig
+from frozone.train import TrainConfig, TrainResults
 
 
-def simulation_dataloader(
-    simulation: Type[Environment],
+_ArraySet = Tuple[np.ndarray, np.ndarray, np.ndarray]
+
+def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files: Optional[int] = None) -> list[_ArraySet]:
+    """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which
+    is a numpy array of shape time steps x dimensionality. """
+
+    if max_num_files:
+        # Shuffle files when only loading a subset to get a more representative subset
+        npz_files = copy(npz_files)
+        random.shuffle(npz_files)
+
+    sets = list()
+    for npz_file in npz_files[:max_num_files]:
+        arrs = np.load(npz_file)
+        X, U, S = arrs["X"], arrs["U"], arrs["S"]
+        try:
+            assert np.isnan(X).sum() == 0, "NaN for X in %s" % npz_file
+            assert np.isnan(U).sum() == 0, "NaN for U in %s" % npz_file
+            assert np.isnan(S).sum() == 0, "NaN for S in %s" % npz_file
+            assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
+        except AssertionError as e:
+            print(e)
+            continue
+        if len(X) < train_cfg.H + train_cfg.F + 3:
+            # Ignore files with too little data to be useful
+            continue
+        sets.append((X, U, S))
+
+    return sets
+
+def standardize(
+    env: Type[Environment],
+    dataset: list[_ArraySet],
+    train_results: TrainResults,
+) -> int:
+    """ Calculates the feature-wise mean and standard deviations of X and U for the given data set. """
+
+    if train_results.mean_x is None:
+
+        sum_x = np.zeros(len(env.XLabels))
+        sum_u = np.zeros(len(env.ULabels))
+        sse_x = np.zeros(len(env.XLabels))
+        sse_u = np.zeros(len(env.ULabels))
+
+        # Calculate sum
+        n = 0
+        for X, U, S in dataset:
+            sum_x += X.sum(axis=0)
+            sum_u += U.sum(axis=0)
+            n += len(X)
+
+        mean_x = sum_x / n
+        mean_u = sum_u / n
+
+        # Calculate variance
+        for X, U, S in dataset:
+            X[...] = X - mean_x
+            U[...] = U - mean_u
+
+            sse_x += (X ** 2).sum(axis=0)
+            sse_u += (U ** 2).sum(axis=0)
+
+        std_x = np.sqrt(sse_x / (n - 1))
+        std_u = np.sqrt(sse_u / (n - 1))
+
+        train_results.mean_x = mean_x.astype(np.float32)
+        train_results.std_x = std_x.astype(np.float32)
+        train_results.mean_u = mean_u.astype(np.float32)
+        train_results.std_u = std_u.astype(np.float32)
+
+    else:
+
+        for X, U, S in dataset:
+            X[...] = X - train_results.mean_x
+            U[...] = U - train_results.mean_u
+
+    eps = 1e-6
+    for X, U, S in dataset:
+        X[...] = X / (train_results.std_x + eps)
+        U[...] = U / (train_results.std_u + eps)
+
+def _to_device(*args: np.ndarray) -> list[torch.Tensor]:
+    return [torch.from_numpy(x).to(device) for x in args]
+
+def dataloader(
+    env: Type[Environment],
     train_cfg: TrainConfig,
-    num_simulations = 1000,
-    central_iters = 10000,
+    dataset: list[_ArraySet],
 ) -> Generator[tuple[torch.FloatTensor], None, None]:
-    """ Yields Xh, Uh, Sh, Xf, Sf, u, s on device. """
 
-    iters = central_iters + train_cfg.H + train_cfg.F
-    with TT.profile("Generate new states"):
-        X, _, U, S = simulation.simulate(num_simulations, iters, train_cfg.dt)
+    # Probability to select a given set is proportional to the amount of data in it
+    p = np.array([len(X) for X, *_ in dataset]) / sum(len(X) for X, *_ in dataset)
 
     while True:
-        Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(simulation.XLabels)), dtype=Environment.X_dtype)
-        Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(simulation.ULabels)), dtype=Environment.U_dtype)
-        Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(simulation.S_bin_count)), dtype=Environment.S_dtype)
-        Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(simulation.XLabels)), dtype=Environment.X_dtype)
-        Sf = np.empty((train_cfg.batch_size, train_cfg.F, len(simulation.SLabels)), dtype=Environment.S_dtype)
-        u = np.empty((train_cfg.batch_size, len(simulation.ULabels)), dtype=Environment.U_dtype)
-        s = np.empty((train_cfg.batch_size, 2, sum(simulation.S_bin_count)), dtype=Environment.S_dtype)
 
-        TT.profile("Sample")
-        sim_nums = np.random.randint(0, num_simulations, train_cfg.batch_size)
-        start_iters = np.random.randint(0, central_iters, train_cfg.batch_size)
+        # These should not be changed to torch, as the sampling later apparently is much faster in numpy
+        Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.XLabels)), dtype=np.float32)
+        Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float32)
+        Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float32)
+        Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float32)
+        Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
+        u  = np.empty((train_cfg.batch_size, len(env.ULabels)), dtype=np.float32)
+        s  = np.empty((train_cfg.batch_size, 2, sum(env.S_bin_count)), dtype=np.float32)
+
+        TT.profile("Get data")
+        set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=False, p=p)
+        TT.profile("Sample", hits=train_cfg.batch_size)
         for i in range(train_cfg.batch_size):
-            Xh[i] = X[sim_nums[i], start_iters[i]:start_iters[i] + train_cfg.H]
-            Uh[i] = U[sim_nums[i], start_iters[i]:start_iters[i] + train_cfg.H]
-            Sh[i] = S[sim_nums[i], start_iters[i]:start_iters[i] + train_cfg.H]
-            Xf[i] = X[sim_nums[i], start_iters[i] + train_cfg.H:start_iters[i] + train_cfg.H + train_cfg.F]
-            Sf[i] = S[sim_nums[i], start_iters[i] + train_cfg.H:start_iters[i] + train_cfg.H + train_cfg.F]
-            u[i]  = U[sim_nums[i], start_iters[i] + train_cfg.H]
-            s[i]  = S[sim_nums[i], start_iters[i] + train_cfg.H:start_iters[i] + train_cfg.H + 2]
+            X, U, S = dataset[set_index[i]]
+            start_iter = random.randint(0, len(X) - train_cfg.H - train_cfg.F - 1)
+
+            Xh[i] = X[start_iter:start_iter + train_cfg.H]
+            Uh[i] = U[start_iter:start_iter + train_cfg.H]
+            Sh[i] = S[start_iter:start_iter + train_cfg.H]
+            Xf[i] = X[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
+            Sf[i] = S[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
+            u[i]  = U[start_iter + train_cfg.H]
+            s[i]  = S[start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
+
         TT.end_profile()
 
         with TT.profile("To device"):
-            Xh = torch.from_numpy(Xh).to(device)
-            Uh = torch.from_numpy(Uh).to(device)
-            Sh = torch.from_numpy(Sh).to(device)
-            Xf = torch.from_numpy(Xf).to(device)
-            Sf = torch.from_numpy(Sf).to(device)
-            u = torch.from_numpy(u).to(device)
-            s = torch.from_numpy(s).to(device)
+            Xh, Uh, Sh, Xf, Sf, u, s = _to_device(Xh, Uh, Sh, Xf, Sf, u, s)
+
+        TT.end_profile()
 
         yield Xh, Uh, Sh, Xf, Sf, u, s

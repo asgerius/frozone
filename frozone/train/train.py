@@ -9,7 +9,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators
 
 import frozone.environments as environments
 from frozone import device
-from frozone.data.dataloader import dataloader, set_mean_std, processed_data_cycler
+from frozone.data.dataloader import dataloader, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
@@ -47,8 +47,8 @@ def train(job: JobDescription):
         target_encoder_name   = "FullyConnected",
         dynamics_network_name = "FullyConnected",
         control_network_name  = "FullyConnected",
-        fc_layer_num = 2,
-        fc_layer_size = 300,
+        fc_layer_num = 3,
+        fc_layer_size = 400,
         resnext_cardinality = 2,
         dropout_p = 0.0,
     )).to(device)
@@ -75,11 +75,16 @@ def train(job: JobDescription):
         "Test:  %s (%.2f %%)" % (thousands_seperators(len(test_npz_files)), 100 * len(test_npz_files) / (len(train_npz_files) + len(test_npz_files))),
         sep="    \n",
     )
-    log("Calculating feature-wise mean and standard deviation")
-    with TT.profile("Calculate mean and std."):
-        set_mean_std(len(train_npz_files), env, train_results, processed_data_cycler(train_npz_files))
-    train_dataloader = dataloader(env, train_cfg, train_results, train_npz_files)
-    test_dataloader = dataloader(env, train_cfg, train_results, test_npz_files)
+    log("Loading data")
+    with TT.profile("Load data"):
+        train_dataset = load_data_files(train_npz_files, train_cfg, max_num_files=8000)
+        test_dataset = load_data_files(test_npz_files, train_cfg)
+    log("Standardizing data")
+    with TT.profile("Standardize"):
+        standardize(env, train_dataset, train_results)
+        standardize(env, test_dataset, train_results)
+    train_dataloader = dataloader(env, train_cfg, train_dataset)
+    test_dataloader = dataloader(env, train_cfg, test_dataset)
 
     plot_counter = 1
     @torch.inference_mode()

@@ -1,0 +1,5 @@
+TRAIN_TEST_SPLIT = 0.9
+RAW_SUBDIR = "Raw"
+PROCESSED_SUBDIR = "Processed"
+TRAIN_SUBDIR = "Train"
+TEST_SUBDIR = "Test"
