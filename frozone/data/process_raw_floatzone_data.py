@@ -15,8 +15,33 @@ from frozone.data import PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.environments import FloatZone
 
 
+def keep_automode_slice(automode: np.ndarray) -> slice:
+    start, stop = None, None
+    for i, is_automode in enumerate(automode):
+        if is_automode and start is None:
+            start = i
+        elif not is_automode and start is not None:
+            stop = i
+            break
+
+    return slice(start, stop)
+
 def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    automode = df["Automode_GenVoltage"].values   & df["Automode_PolyPull"].values & \
+               df["Automode_CrysPull"].values     & df["Automode_PolyRotation"].values & \
+               df["Automode_CrysRotation"].values & df["Automode_CoilPos"].values & \
+               df["External_Control"].values
+
+    # Only use data from when automation is active
+    # Values can be messy outside this range
+    use_slice = keep_automode_slice(automode)
+
+    assert (use_slice.stop - use_slice.start) / len(df) > 0.8 or len(df) < 2000, f"{use_slice.stop - use_slice.start} / {len(df)}"
+
+    df = df.iloc[use_slice]
     n = len(df)
+
     X = np.empty((n, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
     U = np.empty((n, len(FloatZone.ULabels)), dtype=FloatZone.U_dtype)
     S = np.zeros((n, sum(FloatZone.S_bin_count)), dtype=FloatZone.S_dtype)
@@ -60,6 +85,11 @@ def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
         S[i, :PLC_count][plc_is_true] = 1
 
         S[i, PLC_count+growth_state_index[df["Growth_State_Act"].values[i]]] = 1
+
+    assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
+    assert np.isnan(X).sum() == 0, "NaN for X"
+    assert np.isnan(U).sum() == 0, "NaN for U"
+    assert np.isnan(S).sum() == 0, "NaN for S"
 
     return X, U, S
 

@@ -28,14 +28,6 @@ def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files:
     for npz_file in npz_files[:max_num_files]:
         arrs = np.load(npz_file)
         X, U, S = arrs["X"], arrs["U"], arrs["S"]
-        try:
-            assert np.isnan(X).sum() == 0, "NaN for X in %s" % npz_file
-            assert np.isnan(U).sum() == 0, "NaN for U in %s" % npz_file
-            assert np.isnan(S).sum() == 0, "NaN for S in %s" % npz_file
-            assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
-        except AssertionError as e:
-            print(e)
-            continue
         if len(X) < train_cfg.H + train_cfg.F + 3:
             # Ignore files with too little data to be useful
             continue
