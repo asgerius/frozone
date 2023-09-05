@@ -15,6 +15,8 @@ from frozone.data import PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.environments import FloatZone
 
 
+MACHINES = ("M31", "M32", "M33", "M34", "M35", "M36", "M37", "M38", "M41", "M43", "M52", "M54")
+
 def keep_automode_slice(automode: np.ndarray) -> slice:
     start, stop = None, None
     for i, is_automode in enumerate(automode):
@@ -26,7 +28,7 @@ def keep_automode_slice(automode: np.ndarray) -> slice:
 
     return slice(start, stop)
 
-def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def parse_floatzone_df(df: pd.DataFrame, machine: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     automode = df["Automode_GenVoltage"].values   & df["Automode_PolyPull"].values & \
                df["Automode_CrysPull"].values     & df["Automode_PolyRotation"].values & \
@@ -39,7 +41,7 @@ def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
 
     # assert (use_slice.stop - use_slice.start) / len(df) > 0.8 or len(df) < 2000, f"{use_slice.stop - use_slice.start} / {len(df)}"
 
-    df = df.iloc[use_slice]
+    df = df.loc[df["Growth_State_Act"].values == 1024]
     n = len(df)
 
     X = np.empty((n, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
@@ -74,17 +76,19 @@ def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
     # U[:, FloatZone.ULabels.CoilPosition]   = df["CoilPosition[mm]"].values
 
     PLC_count = FloatZone.S_bin_count[FloatZone.SLabels.PLCState]
-    growth_state_index = {1: 0, 2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6,
-                          256: 7, 512: 8, 1024: 9, 2048: 10, 4096: 11, 8192: 12}
-    assert len(growth_state_index) == FloatZone.S_bin_count[FloatZone.SLabels.GrowthState]
-    used_indices = set(growth_state_index.values())
-    assert all(i in used_indices for i in range(len(growth_state_index)))
+    # growth_state_index = {1: 0, 2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6,
+    #                       256: 7, 512: 8, 1024: 9, 2048: 10, 4096: 11, 8192: 12}
+    # assert len(growth_state_index) == FloatZone.S_bin_count[FloatZone.SLabels.GrowthState]
+    # used_indices = set(growth_state_index.values())
+    # assert all(i in used_indices for i in range(len(growth_state_index)))
     for i in range(n):
         binary_str = f"{df['PLC_State_Act'].values[i]:032b}"
         plc_is_true = [bool(int(b)) for b in binary_str]
         S[i, :PLC_count][plc_is_true] = 1
 
-        S[i, PLC_count+growth_state_index[df["Growth_State_Act"].values[i]]] = 1
+        # S[i, PLC_count+growth_state_index[df["Growth_State_Act"].values[i]]] = 1
+
+        S[i, PLC_count + MACHINES.index(machine)] = 1
 
     assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
     assert np.isnan(X).sum() == 0, "NaN for X"
@@ -96,8 +100,9 @@ def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
 def process_floatzone_file(filepath: str) -> str | None:
     try:
         df = pd.read_csv(filepath, quoting=3, delim_whitespace=True)
-        X, U, S = parse_floatzone_df(df)
         path_components = split_path(filepath)
+        machine = path_components[2]
+        X, U, S = parse_floatzone_df(df, machine)
         train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
         outpath = os.path.join(
             path_components[0],
