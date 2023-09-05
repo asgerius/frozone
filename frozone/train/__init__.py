@@ -33,7 +33,7 @@ class TrainConfig(DataStorage):
     max_num_data_files: int
     eval_size:          int
 
-    # Loss weight - 0 for only process and 1 for only control
+    # Loss weight - 0 for only dynamics and 1 for only control
     alpha:              float
 
     # Data augmentation
