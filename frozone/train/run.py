@@ -3,6 +3,7 @@ import os
 from pelutils import log
 from pelutils.parser import Parser, Argument, Option
 
+import frozone.train
 from frozone.train.train import train
 
 
@@ -46,4 +47,8 @@ if __name__ == "__main__":
         log.configure(os.path.join(job.location, "train.log"))
         with log.log_errors:
             log.section("Starting training of job %s" % job.name)
-            train(job)
+            try:
+                frozone.train.is_doing_training = True
+                train(job)
+            finally:
+                frozone.train.is_doing_training = False

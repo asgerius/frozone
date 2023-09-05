@@ -75,7 +75,7 @@ def train(job: JobDescription):
             activation_fn = job.activation_fn,
         )).to(device)
         models.append(model)
-        optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr))
+        optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, foreach=True))
         schedulers.append(build_lr_scheduler(train_cfg, optimizers[-1]))
         if i == 0:
             log("Got model configuration", model.config)
@@ -124,7 +124,6 @@ def train(job: JobDescription):
 
         with TT.profile("Checkpoint"):
             model = models[0]
-            # model.to(device)
             model.eval()
 
             # Evaluate
@@ -160,7 +159,6 @@ def train(job: JobDescription):
             rare_checkpoint_counter = (rare_checkpoint_counter + 1) % 5
 
             model.train()
-            # model.cpu()
 
             # Save training progress
             train_cfg.save(job.location)
@@ -188,7 +186,6 @@ def train(job: JobDescription):
 
         for j in range(train_cfg.num_models):
             model = models[j]
-            # model.to(device)
             optimizer = optimizers[j]
             scheduler = schedulers[j]
 
@@ -209,13 +206,11 @@ def train(job: JobDescription):
                 loss.backward()
                 cuda_sync()
 
-            with TT.profile("Step", hits=train_cfg.num_models):
+            with TT.profile("Step"):
                 optimizer.step()
                 optimizer.zero_grad()
                 scheduler.step()
                 cuda_sync()
-
-            # model.cpu()
 
         if do_log:
             log.debug("Loss: %.6f" % (sum(train_results.train_loss[j][-1] for j in range(train_cfg.num_models)) / train_cfg.num_models))

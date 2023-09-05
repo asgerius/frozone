@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import random
+import threading
+import time
 from copy import copy
-from typing import Generator, Optional, Tuple, Type
+from queue import Queue
+from typing import Generator, Tuple, Type
 
 import numpy as np
 import torch
-from pelutils import TT
 
+import frozone.train
 from frozone import device
 from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
@@ -91,40 +94,61 @@ def standardize(
 def _to_device(*args: np.ndarray) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device) for x in args]
 
+def _start_dataloader_thread(
+    env: Type[Environment],
+    train_cfg: TrainConfig,
+    dataset: list[_ArraySet],
+    buffer: Queue,
+):
+    def task():
+
+        # Probability to select a given set is proportional to the amount of data in it
+        p = np.array([len(X) for X, *_ in dataset]) / sum(len(X) for X, *_ in dataset)
+
+        while frozone.train.is_doing_training:
+
+            if buffer.qsize() >= train_cfg.num_models:
+                # If full, wait a little and try again
+                time.sleep(0.001)
+                continue
+
+            # These should not be changed to torch, as the sampling is apparently much faster in numpy
+            Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.XLabels)), dtype=np.float32)
+            Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float32)
+            Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float32)
+            Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float32)
+            Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
+            u  = np.empty((train_cfg.batch_size, len(env.ULabels)), dtype=np.float32)
+            s  = np.empty((train_cfg.batch_size, 2, sum(env.S_bin_count)), dtype=np.float32)
+
+            set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=False, p=p)
+
+            for i in range(train_cfg.batch_size):
+                X, U, S = dataset[set_index[i]]
+                start_iter = random.randint(0, len(X) - train_cfg.H - train_cfg.F - 1)
+
+                Xh[i] = X[start_iter:start_iter + train_cfg.H]
+                Uh[i] = U[start_iter:start_iter + train_cfg.H]
+                Sh[i] = S[start_iter:start_iter + train_cfg.H]
+                Xf[i] = X[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
+                Sf[i] = S[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
+                u[i]  = U[start_iter + train_cfg.H]
+                s[i]  = S[start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
+
+            buffer.put(_to_device(Xh, Uh, Sh, Xf, Sf, u, s))
+
+    thread = threading.Thread(target=task, daemon=True)
+    thread.start()
+
 def dataloader(
     env: Type[Environment],
     train_cfg: TrainConfig,
     dataset: list[_ArraySet],
 ) -> Generator[tuple[torch.FloatTensor], None, None]:
 
-    # Probability to select a given set is proportional to the amount of data in it
-    p = np.array([len(X) for X, *_ in dataset]) / sum(len(X) for X, *_ in dataset)
+    buffer = Queue(maxsize=train_cfg.num_models)
+
+    _start_dataloader_thread(env, train_cfg, dataset, buffer)
 
     while True:
-
-        # These should not be changed to torch, as the sampling later apparently is much faster in numpy
-        Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.XLabels)), dtype=np.float32)
-        Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float32)
-        Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float32)
-        Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float32)
-        Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
-        u  = np.empty((train_cfg.batch_size, len(env.ULabels)), dtype=np.float32)
-        s  = np.empty((train_cfg.batch_size, 2, sum(env.S_bin_count)), dtype=np.float32)
-
-        set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=False, p=p)
-
-        for i in range(train_cfg.batch_size):
-            X, U, S = dataset[set_index[i]]
-            start_iter = random.randint(0, len(X) - train_cfg.H - train_cfg.F - 1)
-
-            Xh[i] = X[start_iter:start_iter + train_cfg.H]
-            Uh[i] = U[start_iter:start_iter + train_cfg.H]
-            Sh[i] = S[start_iter:start_iter + train_cfg.H]
-            Xf[i] = X[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
-            Sf[i] = S[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
-            u[i]  = U[start_iter + train_cfg.H]
-            s[i]  = S[start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
-
-        Xh, Uh, Sh, Xf, Sf, u, s = _to_device(Xh, Uh, Sh, Xf, Sf, u, s)
-
-        yield Xh, Uh, Sh, Xf, Sf, u, s
+        yield buffer.get()

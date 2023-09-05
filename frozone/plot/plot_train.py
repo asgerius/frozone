@@ -1,5 +1,6 @@
 import os
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pelutils.ds.plots as plots
@@ -7,6 +8,10 @@ from pelutils import TT
 
 from frozone.train import TrainConfig, TrainResults
 
+
+# Use a non-gui backend. For God knows what reason, using the default TkAgg GUI based backend
+# completely breaks when having an asynchronous data loader.
+matplotlib.use('Agg')
 
 _save_folder = "train-plots"
 
