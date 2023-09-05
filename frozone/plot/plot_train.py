@@ -1,6 +1,7 @@
 import os
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pelutils.ds.plots as plots
 from pelutils import TT
 
@@ -14,19 +15,22 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         plot_both = 0 < train_cfg.alpha < 1
         plot_dynamics = plot_both or train_cfg.alpha == 0
         plot_control = plot_both or train_cfg.alpha == 1
+        train_loss_x = np.array(train_results.train_loss_x)
+        train_loss_u = np.array(train_results.train_loss_u)
+        train_loss = np.array(train_results.train_loss)
 
         if plot_dynamics:
-            plt.plot(train_results.train_loss_x, color="grey", alpha=0.2)
+            plt.plot(train_loss_x.mean(axis=0), color="grey", alpha=0.2)
         if plot_control:
-            plt.plot(train_results.train_loss_u, color="grey", alpha=0.2)
+            plt.plot(train_loss_u.mean(axis=0), color="grey", alpha=0.2)
         if plot_both:
-            plt.plot(train_results.train_loss, color="grey", alpha=0.2)
+            plt.plot(train_loss.mean(axis=0), color="grey", alpha=0.2)
         if plot_dynamics:
-            plt.plot(*plots.moving_avg(train_results.train_loss_x, neighbors=12), label="Train loss $X$", color=plots.tab_colours[0], alpha=0.8)
+            plt.plot(*plots.moving_avg(train_loss_x.mean(axis=0), neighbors=12), label="Train loss $X$", color=plots.tab_colours[0], alpha=0.8)
         if plot_control:
-            plt.plot(*plots.moving_avg(train_results.train_loss_u, neighbors=12), label="Train loss $U$", color=plots.tab_colours[1], alpha=0.8)
+            plt.plot(*plots.moving_avg(train_loss_u.mean(axis=0), neighbors=12), label="Train loss $U$", color=plots.tab_colours[1], alpha=0.8)
         if plot_both:
-            plt.plot(*plots.moving_avg(train_results.train_loss, neighbors=12), label="Train loss", color=plots.tab_colours[2], alpha=0.8)
+            plt.plot(*plots.moving_avg(train_loss.mean(axis=0), neighbors=12), label="Train loss", color=plots.tab_colours[2], alpha=0.8)
 
         if plot_dynamics:
             plt.plot(train_results.checkpoints, train_results.test_loss_x, "-o", color="black", lw=2.7, ms=8)

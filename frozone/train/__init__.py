@@ -24,6 +24,7 @@ class TrainConfig(DataStorage):
     batches:            int
     batch_size:         int
     lr:                 float
+    num_models:         int
     # Dataset stuff
     max_num_data_files: int
     eval_size:          int
@@ -57,10 +58,10 @@ class TrainResults(DataStorage):
     mean_u:             Optional[np.ndarray]
     std_u:              Optional[np.ndarray]
 
-    checkpoints:        list[int]
-    train_loss_x:       list[float]
-    train_loss_u:       list[float]
-    train_loss:         list[float]
+    checkpoints:        list[int]  # Batches before which there was a checkpoint
+    train_loss_x:       list[list[float]]  # Models outermost, batches innermost
+    train_loss_u:       list[list[float]]
+    train_loss:         list[list[float]]
     test_loss_x:        list[float]
     test_loss_u:        list[float]
     test_loss:          list[float]
@@ -70,10 +71,11 @@ class TrainResults(DataStorage):
     lr:                 list[float]
 
     @classmethod
-    def empty(cls) -> TrainResults:
+    def empty(cls, num_models: int) -> TrainResults:
         return TrainResults(
             # Mean and standard deviation
             None, None, None, None,
             # Everything else
-            list(), list(), list(), list(), list(), list(), list(), list(), list(), list(), list(),
+            list(), [list() for _ in range(num_models)], [list() for _ in range(num_models)], [list() for _ in range(num_models)],
+            list(), list(), list(), list(), list(), list(), list(),
         )

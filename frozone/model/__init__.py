@@ -36,7 +36,7 @@ class FzConfig(DataStorage):
 
     resnext_cardinality: int
 
-    dropout_p: float = 0
+    dropout_p: float
     activation_fn: str = "ReLU"
 
     def __post_init__(self):
@@ -112,18 +112,18 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         return sum(p.numel() for p in self.parameters())
 
     @classmethod
-    def _state_dict_file_name(cls) -> str:
-        return cls.__name__ + ".pt"
+    def _state_dict_file_name(cls, num: int) -> str:
+        return cls.__name__ + "_%i.pt" % num
 
-    def save(self, path: str):
-        torch.save(self.state_dict(), os.path.join(path, self._state_dict_file_name()))
-        self.config.save(path, self.__class__.__name__)
+    def save(self, path: str, num: int):
+        torch.save(self.state_dict(), os.path.join(path, self._state_dict_file_name(num)))
+        self.config.save(path, self.__class__.__name__ + "_%i" % num)
 
     @classmethod
-    def load(cls, path: str) -> _FloatzoneModule:
-        config = FzConfig.load(path, cls.__name__)
+    def load(cls, path: str, num: int) -> _FloatzoneModule:
+        config = FzConfig.load(path, cls.__name__ + "_%i" % num)
         model = cls(config).to(device)
-        model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name()), map_location=device))
+        model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num)), map_location=device))
         return model
 
     def build_fully_connected(self, in_size: int, out_size: int) -> list[nn.Module]:

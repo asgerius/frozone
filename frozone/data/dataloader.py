@@ -111,9 +111,8 @@ def dataloader(
         u  = np.empty((train_cfg.batch_size, len(env.ULabels)), dtype=np.float32)
         s  = np.empty((train_cfg.batch_size, 2, sum(env.S_bin_count)), dtype=np.float32)
 
-        TT.profile("Get data")
         set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=False, p=p)
-        TT.profile("Sample", hits=train_cfg.batch_size)
+
         for i in range(train_cfg.batch_size):
             X, U, S = dataset[set_index[i]]
             start_iter = random.randint(0, len(X) - train_cfg.H - train_cfg.F - 1)
@@ -126,11 +125,6 @@ def dataloader(
             u[i]  = U[start_iter + train_cfg.H]
             s[i]  = S[start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
 
-        TT.end_profile()
-
-        with TT.profile("To device"):
-            Xh, Uh, Sh, Xf, Sf, u, s = _to_device(Xh, Uh, Sh, Xf, Sf, u, s)
-
-        TT.end_profile()
+        Xh, Uh, Sh, Xf, Sf, u, s = _to_device(Xh, Uh, Sh, Xf, Sf, u, s)
 
         yield Xh, Uh, Sh, Xf, Sf, u, s

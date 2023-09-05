@@ -17,6 +17,7 @@ options = (
     Option("batches", type=int, default=10000),
     Option("batch-size", type=int, default=200),
     Option("lr", type=float, default=1e-5),
+    Option("num-models", type=int, default=1),
     Option("max-num-data-files", type=int, default=0),
     Option("eval-size", type=int, default=4000),
     Option("alpha", type=float, default=0.5),
@@ -32,6 +33,7 @@ options = (
     Option("fc-layer-size", type=int, default=400),
     Option("resnext-cardinality", type=int, default=1),
     Option("dropout-p", type=float, default=0),
+    Option("activation-fn", default="ReLU"),
 )
 
 if __name__ == "__main__":
