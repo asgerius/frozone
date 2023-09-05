@@ -1,5 +1,7 @@
+import gc
 import os
 
+import torch
 from pelutils import log
 from pelutils.parser import Parser, Argument, Option
 
@@ -52,3 +54,9 @@ if __name__ == "__main__":
                 train(job)
             finally:
                 frozone.train.is_doing_training = False
+
+            # Based on sad experiences in the past, the following may or may not be necessary
+            # to prevent a memory leak when running multiple jobs.
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
