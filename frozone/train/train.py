@@ -24,13 +24,26 @@ def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
     return torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr = config.lr,
-        epochs = TrainConfig.batches,
+        epochs = config.batches,
         steps_per_epoch = 1,
     )
 
 def train(job: JobDescription):
 
-    train_cfg = TrainConfig()
+    train_cfg = TrainConfig(
+        env = job.env,
+        data_path = job.data_path,
+        dt = job.dt,
+        history_window = job.history_window,
+        prediction_window = job.prediction_window,
+        batches = job.batches,
+        batch_size = job.batch_size,
+        lr = job.lr,
+        max_num_data_files = job.max_num_data_files,
+        eval_size = job.eval_size,
+        alpha = job.alpha,
+        epsilon = job.epsilon,
+    )
     train_results = TrainResults.empty()
 
     env: Type[environments.Environment] = getattr(environments, train_cfg.env)
@@ -39,26 +52,28 @@ def train(job: JobDescription):
     model = FzNetwork(FzConfig(
         Dx = len(env.XLabels),
         Du = len(env.ULabels),
-        Dz = 500,
+        Dz = job.Dz,
         Ds = sum(env.S_bin_count),
         H = train_cfg.H,
         F = train_cfg.F,
-        history_encoder_name  = "FullyConnected",
-        target_encoder_name   = "FullyConnected",
-        dynamics_network_name = "FullyConnected",
-        control_network_name  = "FullyConnected",
-        fc_layer_num = 3,
-        fc_layer_size = 400,
-        resnext_cardinality = 2,
-        dropout_p = 0.0,
+        history_encoder_name  = job.history_encoder,
+        target_encoder_name   = job.target_encoder,
+        dynamics_network_name = job.dynamics_network,
+        control_network_name  = job.control_network,
+        mode = 0 if 0 < train_cfg.alpha < 1 else 1 if train_cfg.alpha == 0 else 2,
+        fc_layer_num = job.fc_layer_num,
+        fc_layer_size = job.fc_layer_size,
+        resnext_cardinality = job.resnext_cardinality,
+        dropout_p = job.dropout_p,
     )).to(device)
+    log("Got model configuration", model.config)
     log.debug("Built model", model)
     log(
         "Number of model parameters",
         "History encoder:  %s" % thousands_seperators(model.history_encoder.numel()),
         "Target encoder:   %s" % thousands_seperators(model.target_encoder.numel()),
-        "Dynamics network: %s" % thousands_seperators(model.dynamics_network.numel()),
-        "Control network:  %s" % thousands_seperators(model.control_network.numel()),
+        "Dynamics network: %s" % thousands_seperators(model.dynamics_network.numel() if model.config.has_dynamics_network else 0),
+        "Control network:  %s" % thousands_seperators(model.control_network.numel() if model.config.has_control_network else 0),
         "Total:            %s" % thousands_seperators(model.numel()),
         sep="   \n",
     )
@@ -107,9 +122,10 @@ def train(job: JobDescription):
                     Xh, Uh, Sh, Xf, Sf, u, s = next(test_dataloader)
                     with TT.profile("Forward"):
                         _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
-                    test_loss_x[j] = loss_fn(Xf[:, 1], pred_x).item()
-                    test_loss_u[j] = loss_fn(u, pred_u).item()
+                    test_loss_x[j] = loss_fn(Xf[:, 1], pred_x).item() if pred_x is not None else torch.tensor(0)
+                    test_loss_u[j] = loss_fn(u, pred_u).item() if pred_u is not None else torch.tensor(0)
                     test_loss[j] = (1 - train_cfg.alpha) * test_loss_x[j] + train_cfg.alpha * test_loss_u[j]
+                    assert not torch.isnan(test_loss[j]).isnan()
                 train_results.test_loss_x.append(test_loss_x.mean())
                 train_results.test_loss_u.append(test_loss_u.mean())
                 train_results.test_loss.append(test_loss.mean())
@@ -118,9 +134,9 @@ def train(job: JobDescription):
                     "Test loss U: %.6f" % train_results.test_loss_u[-1],
                     "Test loss:   %.6f" % train_results.test_loss[-1],
                 )
-                train_results.test_loss_x_std.append(test_loss_x.std(ddof=1) * math.sqrt(train_cfg.eval_size))
-                train_results.test_loss_u_std.append(test_loss_u.std(ddof=1) * math.sqrt(train_cfg.eval_size))
-                train_results.test_loss_std.append(test_loss.std(ddof=1) * math.sqrt(train_cfg.eval_size))
+                train_results.test_loss_x_std.append(test_loss_x.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+                train_results.test_loss_u_std.append(test_loss_u.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+                train_results.test_loss_std.append(test_loss.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
 
             # Plot training stuff
             if plot_counter == 0 or batch_no == train_cfg.batches:
@@ -155,9 +171,10 @@ def train(job: JobDescription):
         with TT.profile("Forward"):
             _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
             cuda_sync()
-        loss_x = loss_fn(Xf[:, 1], pred_x)
-        loss_u = loss_fn(u, pred_u)
+        loss_x = loss_fn(Xf[:, 1], pred_x) if pred_x is not None else torch.tensor(0)
+        loss_u = loss_fn(u, pred_u) if pred_u is not None else torch.tensor(0)
         loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
+        assert not torch.isnan(loss).isnan().any()
         with TT.profile("Backward"):
             loss.backward()
             cuda_sync()

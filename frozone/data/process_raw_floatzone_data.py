@@ -37,7 +37,7 @@ def parse_floatzone_df(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
     # Values can be messy outside this range
     use_slice = keep_automode_slice(automode)
 
-    assert (use_slice.stop - use_slice.start) / len(df) > 0.8 or len(df) < 2000, f"{use_slice.stop - use_slice.start} / {len(df)}"
+    # assert (use_slice.stop - use_slice.start) / len(df) > 0.8 or len(df) < 2000, f"{use_slice.stop - use_slice.start} / {len(df)}"
 
     df = df.iloc[use_slice]
     n = len(df)

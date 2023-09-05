@@ -15,9 +15,11 @@ from frozone.train import TrainConfig, TrainResults
 
 _ArraySet = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
-def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files: Optional[int] = None) -> list[_ArraySet]:
+def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files = 0) -> list[_ArraySet]:
     """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which
-    is a numpy array of shape time steps x dimensionality. """
+    is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
+
+    max_num_files = max_num_files or None
 
     if max_num_files:
         # Shuffle files when only loading a subset to get a more representative subset

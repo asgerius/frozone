@@ -23,8 +23,10 @@ class FzNetwork(_FloatzoneModule):
 
         self.history_encoder  = getattr(history_encoders,  self.config.history_encoder_name)(config)
         self.target_encoder   = getattr(target_encoders,   self.config.target_encoder_name)(config)
-        self.dynamics_network = getattr(dynamics_networks, self.config.dynamics_network_name)(config)
-        self.control_network  = getattr(control_networks,  self.config.control_network_name)(config)
+        if config.has_dynamics_network:
+            self.dynamics_network = getattr(dynamics_networks, self.config.dynamics_network_name)(config)
+        if config.has_control_network:
+            self.control_network  = getattr(control_networks,  self.config.control_network_name)(config)
 
     def __call__(
         self,
@@ -48,15 +50,19 @@ class FzNetwork(_FloatzoneModule):
         Sf: torch.FloatTensor,
         u: Optional[torch.FloatTensor] = None,
         s: Optional[torch.FloatTensor] = None,
-    ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], torch.FloatTensor]:
+    ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
         z1 = self.history_encoder(Xh, Uh, Sh)
         z2 = self.target_encoder(Xf, Sf)
 
-        if u is not None:
+        if self.config.has_dynamics_network and u is not None:
             assert s is not None
             x_pred = self.dynamics_network(u, s, z1)
         else:
             x_pred = None
-        u_pred = self.control_network(z1, z2)
+
+        if self.config.has_control_network:
+            u_pred = self.control_network(z1, z2)
+        else:
+            u_pred = None
 
         return z1, x_pred, u_pred

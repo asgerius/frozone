@@ -28,6 +28,9 @@ class FzConfig(DataStorage):
     dynamics_network_name: str
     control_network_name:  str
 
+    # 0 for both dynamics and control, 1 for dynamics only, and 2 for control only
+    mode: int
+
     fc_layer_num:  int
     fc_layer_size: int
 
@@ -53,6 +56,14 @@ class FzConfig(DataStorage):
 
     def get_activation_fn(self) -> nn.Module:
         return getattr(nn, self.activation_fn)()
+
+    @property
+    def has_dynamics_network(self) -> bool:
+        return self.mode in { 0, 1 }
+
+    @property
+    def has_control_network(self) -> bool:
+        return self.mode in { 0, 2 }
 
 class ResnextBlock(nn.Module):
     """ ResNeXt block as proposed in https://arxiv.org/pdf/1611.05431.pdf.

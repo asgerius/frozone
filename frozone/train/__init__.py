@@ -12,28 +12,29 @@ from pelutils import DataStorage
 class TrainConfig(DataStorage):
 
     # Environment should match name of a class in simulations
-    env:                str = "FloatZone"
-    data_path:          str = "data-floatzone"
+    env:                str
+    data_path:          str
 
     # Windows are given in seconds
-    dt:                 float = 6
-    history_window:     float = 42
-    prediction_window:  float = 30
+    dt:                 float
+    history_window:     float
+    prediction_window:  float
 
     # Training stuff
-    batches:            int = 15000
-    batch_size:         int = 200
-    lr:                 float = 2e-5
-    # How many data points to include in each evaluation
-    eval_size:          int = 4000
+    batches:            int
+    batch_size:         int
+    lr:                 float
+    # Dataset stuff
+    max_num_data_files: int
+    eval_size:          int
 
     # Loss weight - 0 for only process and 1 for only control
-    alpha:              float = 0.5
+    alpha:              float
 
     # Data augmentation
     # Standard deviation of the generated noise
     # This is given as a multiplier to the feature-wise standard deviation in the data
-    epsilon:            float = 0.05
+    epsilon:            float
 
     @property
     def H(self) -> int:
