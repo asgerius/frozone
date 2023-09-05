@@ -66,12 +66,12 @@ class TrainResults(DataStorage):
     train_loss_x:       list[list[float]]  # Models outermost, batches innermost
     train_loss_u:       list[list[float]]
     train_loss:         list[list[float]]
-    test_loss_x:        list[float]
-    test_loss_u:        list[float]
-    test_loss:          list[float]
-    test_loss_x_std:    list[float]
-    test_loss_u_std:    list[float]
-    test_loss_std:      list[float]
+    test_loss_x:        list[list[float]]
+    test_loss_u:        list[list[float]]
+    test_loss:          list[list[float]]
+    test_loss_x_std:    list[list[float]]
+    test_loss_u_std:    list[list[float]]
+    test_loss_std:      list[list[float]]
     lr:                 list[float]
 
     @classmethod
@@ -80,6 +80,5 @@ class TrainResults(DataStorage):
             # Mean and standard deviation
             None, None, None, None,
             # Everything else
-            list(), [list() for _ in range(num_models)], [list() for _ in range(num_models)], [list() for _ in range(num_models)],
-            list(), list(), list(), list(), list(), list(), list(),
+            list(), *([list() for _ in range(num_models)] for _ in range(9)), list(),
         )

@@ -40,6 +40,9 @@ def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files 
 
     return sets
 
+def dataset_size(dataset: list[_ArraySet]) -> int:
+    return sum(len(X) for X, U, S in dataset)
+
 def standardize(
     env: Type[Environment],
     dataset: list[_ArraySet],
@@ -146,7 +149,7 @@ def dataloader(
     dataset: list[_ArraySet],
 ) -> Generator[tuple[torch.FloatTensor], None, None]:
 
-    buffer = Queue(maxsize=train_cfg.num_models)
+    buffer = Queue(maxsize = 2 * train_cfg.num_models)
 
     _start_dataloader_thread(env, train_cfg, dataset, buffer)
 

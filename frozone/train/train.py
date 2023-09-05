@@ -10,7 +10,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators
 
 import frozone.environments as environments
 from frozone import device
-from frozone.data.dataloader import dataloader, load_data_files, standardize
+from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
@@ -102,8 +102,14 @@ def train(job: JobDescription):
     )
     log("Loading data")
     with TT.profile("Load data"):
-        train_dataset = load_data_files(train_npz_files, train_cfg, max_num_files=8000)
+        train_dataset = load_data_files(train_npz_files, train_cfg, max_num_files=train_cfg.max_num_data_files)
         test_dataset = load_data_files(test_npz_files, train_cfg)
+    log(
+        "Loaded datasets",
+        "Train data points: %s" % thousands_seperators(dataset_size(train_dataset)),
+        "Test data points:  %s" % thousands_seperators(dataset_size(test_dataset)),
+    )
+
     log("Standardizing data")
     with TT.profile("Standardize"):
         standardize(env, train_dataset, train_results)
@@ -123,33 +129,37 @@ def train(job: JobDescription):
         is_rare_checkpoint = rare_checkpoint_counter == 0 or batch_no == train_cfg.batches
 
         with TT.profile("Checkpoint"):
-            model = models[0]
-            model.eval()
 
             # Evaluate
-            with TT.profile("Evalutate"):
-                test_loss_x = np.empty(train_cfg.num_eval_batches)
-                test_loss_u = np.empty(train_cfg.num_eval_batches)
-                test_loss = np.empty(train_cfg.num_eval_batches)
-                for j in range(train_cfg.num_eval_batches):
-                    Xh, Uh, Sh, Xf, Sf, u, s = next(test_dataloader)
-                    with TT.profile("Forward"):
-                        _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
-                    test_loss_x[j] = loss_fn(Xf[:, 1], pred_x).item() if pred_x is not None else torch.tensor(0)
-                    test_loss_u[j] = loss_fn(u, pred_u).item() if pred_u is not None else torch.tensor(0)
-                    test_loss[j] = (1 - train_cfg.alpha) * test_loss_x[j] + train_cfg.alpha * test_loss_u[j]
-                    assert not np.isnan(test_loss[j])
-                train_results.test_loss_x.append(test_loss_x.mean())
-                train_results.test_loss_u.append(test_loss_u.mean())
-                train_results.test_loss.append(test_loss.mean())
-                log(
-                    "Test loss X: %.6f" % train_results.test_loss_x[-1],
-                    "Test loss U: %.6f" % train_results.test_loss_u[-1],
-                    "Test loss:   %.6f" % train_results.test_loss[-1],
-                )
-                train_results.test_loss_x_std.append(test_loss_x.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
-                train_results.test_loss_u_std.append(test_loss_u.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
-                train_results.test_loss_std.append(test_loss.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+            for j, model in enumerate(models):
+                model.eval()
+
+                with TT.profile("Evalutate"):
+                    test_loss_x = np.empty(train_cfg.num_eval_batches)
+                    test_loss_u = np.empty(train_cfg.num_eval_batches)
+                    test_loss = np.empty(train_cfg.num_eval_batches)
+                    for k in range(train_cfg.num_eval_batches):
+                        Xh, Uh, Sh, Xf, Sf, u, s = next(test_dataloader)
+                        with TT.profile("Forward"):
+                            _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
+                        test_loss_x[k] = loss_fn(Xf[:, 1], pred_x).item() if pred_x is not None else torch.tensor(0)
+                        test_loss_u[k] = loss_fn(u, pred_u).item() if pred_u is not None else torch.tensor(0)
+                        test_loss[k] = (1 - train_cfg.alpha) * test_loss_x[k] + train_cfg.alpha * test_loss_u[k]
+                        assert not np.isnan(test_loss[k])
+                    train_results.test_loss_x[j].append(test_loss_x.mean())
+                    train_results.test_loss_u[j].append(test_loss_u.mean())
+                    train_results.test_loss[j].append(test_loss.mean())
+                    train_results.test_loss_x_std[j].append(test_loss_x.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_u_std[j].append(test_loss_u.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_std[j].append(test_loss.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+
+                model.train()
+
+            log(
+                "Test loss X: %.6f" % np.array(train_results.test_loss_x)[:, -1].mean(),
+                "Test loss U: %.6f" % np.array(train_results.test_loss_u)[:, -1].mean(),
+                "Test loss:   %.6f" % np.array(train_results.test_loss)[:, -1].mean(),
+            )
 
             # Plot training stuff
             if is_rare_checkpoint:
@@ -157,8 +167,6 @@ def train(job: JobDescription):
                 plot_loss(job.location, train_cfg, train_results)
                 plot_lr(job.location, train_cfg, train_results)
             rare_checkpoint_counter = (rare_checkpoint_counter + 1) % 5
-
-            model.train()
 
             # Save training progress
             train_cfg.save(job.location)

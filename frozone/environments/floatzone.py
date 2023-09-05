@@ -32,7 +32,8 @@ class FloatZone(Environment):
 
     class SLabels(enum.IntEnum):
         PLCState        = 0
-        GrowthState     = 1
-        DropState       = 2
+        # GrowthState     = 1
+        # DropState       = 2
+        Machine         = 1
 
-    S_bin_count = (32, 13, 0)
+    S_bin_count = (32, 12)

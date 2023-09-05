@@ -20,9 +20,14 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         plot_both = 0 < train_cfg.alpha < 1
         plot_dynamics = plot_both or train_cfg.alpha == 0
         plot_control = plot_both or train_cfg.alpha == 1
+
         train_loss_x = np.array(train_results.train_loss_x)
         train_loss_u = np.array(train_results.train_loss_u)
         train_loss = np.array(train_results.train_loss)
+
+        test_loss_x = np.array(train_results.test_loss_x)
+        test_loss_u = np.array(train_results.test_loss_u)
+        test_loss = np.array(train_results.test_loss)
 
         if plot_dynamics:
             plt.plot(train_loss_x.mean(axis=0), color="grey", alpha=0.2)
@@ -38,17 +43,17 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
             plt.plot(*plots.moving_avg(train_loss.mean(axis=0), neighbors=12), label="Train loss", color=plots.tab_colours[2], alpha=0.8)
 
         if plot_dynamics:
-            plt.plot(train_results.checkpoints, train_results.test_loss_x, "-o", color="black", lw=2.7, ms=8)
+            plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), "-o", color="black", lw=2.7, ms=8)
         if plot_control:
-            plt.plot(train_results.checkpoints, train_results.test_loss_u, "-o", color="black", lw=2.7, ms=8)
+            plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), "-o", color="black", lw=2.7, ms=8)
         if plot_both:
-            plt.plot(train_results.checkpoints, train_results.test_loss, "-o", color="black", lw=2.7, ms=8)
+            plt.plot(train_results.checkpoints, test_loss.mean(axis=0), "-o", color="black", lw=2.7, ms=8)
         if plot_dynamics:
-            plt.plot(train_results.checkpoints, train_results.test_loss_x, "-o", label="Test loss $X$", color=plots.tab_colours[0], lw=1.5, ms=6)
+            plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), "-o", label="Test loss $X$", color=plots.tab_colours[0], lw=1.5, ms=6)
         if plot_control:
-            plt.plot(train_results.checkpoints, train_results.test_loss_u, "-o", label="Test loss $U$", color=plots.tab_colours[1], lw=1.5, ms=6)
+            plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), "-o", label="Test loss $U$", color=plots.tab_colours[1], lw=1.5, ms=6)
         if plot_both:
-            plt.plot(train_results.checkpoints, train_results.test_loss, "-o", label="Test loss", color=plots.tab_colours[2], lw=1.5, ms=6)
+            plt.plot(train_results.checkpoints, test_loss.mean(axis=0), "-o", label="Test loss", color=plots.tab_colours[2], lw=1.5, ms=6)
 
         plt.title(train_cfg.env)
         plt.xlabel("Batch")
