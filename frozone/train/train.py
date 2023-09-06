@@ -87,7 +87,6 @@ def train(job: JobDescription):
                 "Dynamics network: %s" % thousands_seperators(model.dynamics_network.numel() if model.config.has_dynamics_network else 0),
                 "Control network:  %s" % thousands_seperators(model.control_network.numel() if model.config.has_control_network else 0),
                 "Total:            %s" % thousands_seperators(model.numel()),
-                sep="   \n",
             )
 
     loss_fn = torch.nn.L1Loss()
@@ -98,7 +97,6 @@ def train(job: JobDescription):
         "Found data files",
         "Train: %s (%.2f %%)" % (thousands_seperators(len(train_npz_files)), 100 * len(train_npz_files) / (len(train_npz_files) + len(test_npz_files))),
         "Test:  %s (%.2f %%)" % (thousands_seperators(len(test_npz_files)), 100 * len(test_npz_files) / (len(train_npz_files) + len(test_npz_files))),
-        sep="    \n",
     )
     log("Loading data")
     with TT.profile("Load data"):
@@ -106,6 +104,8 @@ def train(job: JobDescription):
         test_dataset = load_data_files(test_npz_files, train_cfg)
     log(
         "Loaded datasets",
+        "Used train files:  %s" % thousands_seperators(len(train_dataset)),
+        "Used test files:   %s" % thousands_seperators(len(test_dataset)),
         "Train data points: %s" % thousands_seperators(dataset_size(train_dataset)),
         "Test data points:  %s" % thousands_seperators(dataset_size(test_dataset)),
     )
