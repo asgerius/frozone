@@ -4,7 +4,6 @@ import abc
 import os
 from dataclasses import dataclass
 
-import numpy as np
 import torch
 import torch.nn as nn
 from pelutils import DataStorage
@@ -105,7 +104,7 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         """ Concatenates input tensors to feature vectors. Batches in first dimension are respected. """
         batch_size = tensors[0].shape[0]
         assert all(tensor.shape[0] == batch_size for tensor in tensors)
-        return torch.concat([tensor.view(batch_size, -1) for tensor in tensors], dim=-1)
+        return torch.concat([tensor.reshape(batch_size, -1) for tensor in tensors], dim=-1)
 
     def numel(self) -> int:
         """ Number of model parameters. Further docs here: https://pokemondb.net/pokedex/numel """

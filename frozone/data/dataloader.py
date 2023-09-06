@@ -94,7 +94,7 @@ def standardize(
         X[...] = X / (train_results.std_x + eps)
         U[...] = U / (train_results.std_u + eps)
 
-def _to_device(*args: np.ndarray) -> list[torch.Tensor]:
+def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device) for x in args]
 
 def _start_dataloader_thread(
@@ -138,7 +138,7 @@ def _start_dataloader_thread(
                 u[i]  = U[start_iter + train_cfg.H]
                 s[i]  = S[start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
 
-            buffer.put(_to_device(Xh, Uh, Sh, Xf, Sf, u, s))
+            buffer.put(numpy_to_torch_device(Xh, Uh, Sh, Xf, Sf, u, s))
 
     thread = threading.Thread(target=task, daemon=True)
     thread.start()

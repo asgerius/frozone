@@ -20,8 +20,8 @@ class FullyConnected(_DynamicsNetwork):
 
         self.layers = nn.Sequential(*self.build_fully_connected(in_size, self.config.Dx))
 
-    def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
-        x = self.concat_to_feature_vec(Xh, Uh, Sh)
+    def forward(self, u: torch.FloatTensor, s: torch.FloatTensor, z1: torch.FloatTensor) -> torch.FloatTensor:
+        x = self.concat_to_feature_vec(u, s, z1)
         return self.layers(x)
 
 class ResNext(_DynamicsNetwork):
@@ -33,6 +33,6 @@ class ResNext(_DynamicsNetwork):
 
         self.layers = nn.Sequential(*self.build_resnext(in_size, self.config.Dx))
 
-    def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
-        x = self.concat_to_feature_vec(Xh, Uh, Sh)
+    def forward(self, u: torch.FloatTensor, s: torch.FloatTensor, z1: torch.FloatTensor) -> torch.FloatTensor:
+        x = self.concat_to_feature_vec(u, s, z1)
         return self.layers(x)
