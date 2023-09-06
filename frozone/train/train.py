@@ -83,9 +83,9 @@ def train(job: JobDescription):
             log(
                 "Number of model parameters",
                 "History encoder:  %s" % thousands_seperators(model.history_encoder.numel()),
-                "Target encoder:   %s" % thousands_seperators(model.target_encoder.numel()),
+                "Target encoder:   %s" % thousands_seperators(model.target_encoder.numel() if model.config.has_control_and_target else 0),
                 "Dynamics network: %s" % thousands_seperators(model.dynamics_network.numel() if model.config.has_dynamics_network else 0),
-                "Control network:  %s" % thousands_seperators(model.control_network.numel() if model.config.has_control_network else 0),
+                "Control network:  %s" % thousands_seperators(model.control_network.numel() if model.config.has_control_and_target else 0),
                 "Total:            %s" % thousands_seperators(model.numel()),
             )
 

@@ -62,7 +62,7 @@ class FzConfig(DataStorage):
         return self.mode in { 0, 1 }
 
     @property
-    def has_control_network(self) -> bool:
+    def has_control_and_target(self) -> bool:
         return self.mode in { 0, 2 }
 
 class ResnextBlock(nn.Module):
