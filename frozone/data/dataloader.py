@@ -5,7 +5,7 @@ import threading
 import time
 from copy import copy
 from queue import Queue
-from typing import Generator, Tuple, Type
+from typing import Generator, List, Tuple, Type
 
 import numpy as np
 import torch
@@ -16,9 +16,9 @@ from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
 
 
-_ArraySet = Tuple[np.ndarray, np.ndarray, np.ndarray]
+Dataset = List[Tuple[np.ndarray, np.ndarray, np.ndarray]]
 
-def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files = 0) -> list[_ArraySet]:
+def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files = 0) -> Dataset:
     """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
 
@@ -40,12 +40,12 @@ def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files 
 
     return sets
 
-def dataset_size(dataset: list[_ArraySet]) -> int:
+def dataset_size(dataset: Dataset) -> int:
     return sum(len(X) for X, U, S in dataset)
 
 def standardize(
     env: Type[Environment],
-    dataset: list[_ArraySet],
+    dataset: Dataset,
     train_results: TrainResults,
 ) -> int:
     """ Calculates the feature-wise mean and standard deviations of X and U for the given data set. """
@@ -100,7 +100,7 @@ def _to_device(*args: np.ndarray) -> list[torch.Tensor]:
 def _start_dataloader_thread(
     env: Type[Environment],
     train_cfg: TrainConfig,
-    dataset: list[_ArraySet],
+    dataset: Dataset,
     buffer: Queue,
 ):
     def task():
@@ -146,7 +146,7 @@ def _start_dataloader_thread(
 def dataloader(
     env: Type[Environment],
     train_cfg: TrainConfig,
-    dataset: list[_ArraySet],
+    dataset: Dataset,
 ) -> Generator[tuple[torch.FloatTensor], None, None]:
 
     buffer = Queue(maxsize = 2 * train_cfg.num_models)
