@@ -106,7 +106,7 @@ def _start_dataloader_thread(
     def task():
 
         # Probability to select a given set is proportional to the amount of data in it
-        p = np.array([len(X) for X, *_ in dataset]) / sum(len(X) for X, *_ in dataset)
+        p = np.array([len(X) for X, U, S in dataset]) / dataset_size(dataset)
 
         while frozone.train.is_doing_training:
 
@@ -124,7 +124,7 @@ def _start_dataloader_thread(
             u  = np.empty((train_cfg.batch_size, len(env.ULabels)), dtype=np.float32)
             s  = np.empty((train_cfg.batch_size, 2, sum(env.S_bin_count)), dtype=np.float32)
 
-            set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=False, p=p)
+            set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True, p=p)
 
             for i in range(train_cfg.batch_size):
                 X, U, S = dataset[set_index[i]]
