@@ -12,7 +12,7 @@ import torch
 
 import frozone.train
 from frozone import device
-from frozone.data import Dataset
+from frozone.data import DataSequence, Dataset
 from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
 
@@ -100,7 +100,7 @@ def _start_dataloader_thread(
     env: Type[Environment],
     train_cfg: TrainConfig,
     dataset: Dataset,
-    buffer: Queue,
+    buffer: Queue[DataSequence],
 ):
     def task():
 

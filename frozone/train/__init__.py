@@ -58,22 +58,25 @@ class TrainConfig(DataStorage):
 class TrainResults(DataStorage):
 
     # Feature-wise means and standard deviations of training data
-    mean_x:             Optional[np.ndarray]
-    std_x:              Optional[np.ndarray]
-    mean_u:             Optional[np.ndarray]
-    std_u:              Optional[np.ndarray]
+    mean_x: Optional[np.ndarray]
+    std_x:  Optional[np.ndarray]
+    mean_u: Optional[np.ndarray]
+    std_u:  Optional[np.ndarray]
 
-    checkpoints:        list[int]  # Batches before which there was a checkpoint
-    train_loss_x:       list[list[float]]  # Models outermost, batches innermost
-    train_loss_u:       list[list[float]]
-    train_loss:         list[list[float]]
-    test_loss_x:        list[list[float]]
-    test_loss_u:        list[list[float]]
-    test_loss:          list[list[float]]
-    test_loss_x_std:    list[list[float]]
-    test_loss_u_std:    list[list[float]]
-    test_loss_std:      list[list[float]]
-    lr:                 list[float]
+    checkpoints:          list[int]  # Batches before which there was a checkpoint
+    train_loss_x:         list[list[float]]  # Models outermost, batches innermost
+    train_loss_u:         list[list[float]]
+    train_loss:           list[list[float]]
+    test_loss_x:          list[list[float]]
+    test_loss_u:          list[list[float]]
+    test_loss:            list[list[float]]
+    test_loss_x_std:      list[list[float]]
+    test_loss_u_std:      list[list[float]]
+    test_loss_std:        list[list[float]]
+    ensemble_test_loss_x: list[float]
+    ensemble_test_loss_u: list[float]
+    ensemble_test_loss:   list[float]
+    lr:                   list[float]
 
     @classmethod
     def empty(cls, num_models: int) -> TrainResults:
@@ -81,5 +84,6 @@ class TrainResults(DataStorage):
             # Mean and standard deviation
             None, None, None, None,
             # Everything else
-            list(), *([list() for _ in range(num_models)] for _ in range(9)), list(),
+            list(), *([list() for _ in range(num_models)] for _ in range(9)),
+            list(), list(), list(), list(),
         )

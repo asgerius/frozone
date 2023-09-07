@@ -152,9 +152,9 @@ def train(job: JobDescription):
                     train_results.test_loss_x[j].append(test_loss_x.mean())
                     train_results.test_loss_u[j].append(test_loss_u.mean())
                     train_results.test_loss[j].append(test_loss.mean())
-                    train_results.test_loss_x_std[j].append(test_loss_x.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
-                    train_results.test_loss_u_std[j].append(test_loss_u.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
-                    train_results.test_loss_std[j].append(test_loss.std(ddof=1) / math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_x_std[j].append(test_loss_x.std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_u_std[j].append(test_loss_u.std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_std[j].append(test_loss.std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
 
                 model.train()
 
