@@ -1,4 +1,4 @@
-""" Standalone script for analyzing the raw float-zone data. """
+""" Standalone script for analyzing the float-zone data. """
 import os
 import random
 from collections import defaultdict, Counter
@@ -12,7 +12,9 @@ from pelutils import log, split_path, thousands_seperators
 from pelutils.parser import Parser, Option
 from tqdm import tqdm
 
-from frozone.data import RAW_SUBDIR, PHASES
+from frozone.data import RAW_SUBDIR, PHASES, TRAIN_SUBDIR, list_processed_data_files
+from frozone.data.dataloader import load_data_files
+from frozone.environments import FloatZone
 
 
 _plot_folder = "analysis-plots"
@@ -60,6 +62,72 @@ def plot_phase_distribution(path: str, num_lines_by_phase: defaultdict[int, list
         plt.legend(loc=3)
         plt.grid()
 
+def analyse_raw_data(job):
+
+    raw_files = glob(os.path.join(job.location, RAW_SUBDIR, "**", "*.txt"), recursive=True)
+    random.shuffle(raw_files)
+    raw_files = raw_files[:job.max_files]
+
+    num_lines = list()
+    num_lines_by_machine = defaultdict(list)
+    num_lines_by_phase = defaultdict(list)
+
+    log.section("Analyzing %s raw data files" % thousands_seperators(len(raw_files)))
+    for raw_file in tqdm(raw_files):
+
+        try:
+            df = pd.read_csv(raw_file, quoting=3, delim_whitespace=True)
+        except Exception as e:
+            log.warning("Failed to load %s with the error" % raw_file, e)
+
+        path_components = split_path(raw_file)
+        machine = path_components[2]
+        num_lines.append(len(df))
+        num_lines_by_machine[machine].append(len(df))
+
+        try:
+            lines_by_phase = Counter(df.Growth_State_Act.values)
+        except AttributeError:
+            log.warning("No Growth_State_Act in %s" % raw_file)
+            continue
+
+        for phase_number, count in lines_by_phase.items():
+            if phase_number not in PHASES:
+                log.warning("Phase number %i encountered in %s" % (phase_number, raw_file))
+                continue
+            num_lines_by_phase[phase_number].append(count)
+
+    log.section("Plotting")
+    plot_line_distributions(job.location, num_lines, num_lines_by_machine)
+    plot_phase_distribution(job.location, num_lines_by_phase)
+
+def analyse_processed_data(job):
+    samples = 15
+
+    log("Loading data")
+    test_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR, "Full_Diameter")
+    random.shuffle(test_data_files)
+    test_data_files = test_data_files[:samples]
+    dataset = load_data_files(test_data_files, None)
+
+    log("Plotting X samples")
+    for xlabel in FloatZone.XLabels:
+        with plots.Figure(os.path.join(job.location, _plot_folder, f"X_{xlabel.name}.png")):
+            for X, U, S in dataset:
+                plt.plot(np.arange(len(X)) * 6, X[:, xlabel.value], "-o", color="grey", alpha=0.4, ms=4)
+            plt.title(xlabel.name)
+            plt.xlabel("Time [s]")
+            plt.grid()
+
+    log("Plotting U samples")
+    for ulabel in FloatZone.ULabels:
+        with plots.Figure(os.path.join(job.location, _plot_folder, f"U_{ulabel.name}.png")):
+            for X, U, S in dataset:
+                plt.plot(np.arange(len(U)) * 6, U[:, ulabel.value], color="grey", alpha=0.4, ms=4)
+            plt.title(ulabel.name)
+            plt.xlabel("Time [s]")
+            plt.grid()
+
 if __name__ == "__main__":
     parser = Parser(Option("max-files", type=int, default=None))
     job = parser.parse_args()
@@ -67,39 +135,7 @@ if __name__ == "__main__":
     log.configure(os.path.join(job.location, "analysis.log"), print_level=None)
 
     with log.log_errors:
-        raw_files = glob(os.path.join(job.location, RAW_SUBDIR, "**", "*.txt"), recursive=True)
-        random.shuffle(raw_files)
-        raw_files = raw_files[:job.max_files]
-
-        num_lines = list()
-        num_lines_by_machine = defaultdict(list)
-        num_lines_by_phase = defaultdict(list)
-
-        log.section("Analyzing %s raw data files" % thousands_seperators(len(raw_files)))
-        for raw_file in tqdm(raw_files):
-
-            try:
-                df = pd.read_csv(raw_file, quoting=3, delim_whitespace=True)
-            except Exception as e:
-                log.warning("Failed to load %s with the error" % raw_file, e)
-
-            path_components = split_path(raw_file)
-            machine = path_components[2]
-            num_lines.append(len(df))
-            num_lines_by_machine[machine].append(len(df))
-
-            try:
-                lines_by_phase = Counter(df.Growth_State_Act.values)
-            except AttributeError:
-                log.warning("No Growth_State_Act in %s" % raw_file)
-                continue
-
-            for phase_number, count in lines_by_phase.items():
-                if phase_number not in PHASES:
-                    log.warning("Phase number %i encountered in %s" % (phase_number, raw_file))
-                    continue
-                num_lines_by_phase[phase_number].append(count)
-
-        log.section("Plotting")
-        plot_line_distributions(job.location, num_lines, num_lines_by_machine)
-        plot_phase_distribution(job.location, num_lines_by_phase)
+        log.section("Analysing raw data")
+        analyse_raw_data(job)
+        log.section("Analysing processed data")
+        analyse_processed_data(job)
