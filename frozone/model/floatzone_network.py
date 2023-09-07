@@ -25,14 +25,14 @@ class FzNetwork(_FloatzoneModule):
         self.z1_post_encoder_layers = nn.Sequential(
             config.get_activation_fn(),
             nn.BatchNorm1d(config.Dz),
-            nn.Dropout(config.dropout_p),
+            nn.Dropout(config.dropout),
         )
         if config.has_control_and_target:
             self.target_encoder = getattr(target_encoders,   self.config.target_encoder_name)(config)
             self.z2_post_encoder_layers = nn.Sequential(
                 config.get_activation_fn(),
                 nn.BatchNorm1d(config.Dz),
-                nn.Dropout(config.dropout_p),
+                nn.Dropout(config.dropout),
             )
 
         if config.has_dynamics_network:
@@ -46,13 +46,12 @@ class FzNetwork(_FloatzoneModule):
         Xh: torch.FloatTensor,
         Uh: torch.FloatTensor,
         Sh: torch.FloatTensor,
-        Xf: Optional[torch.FloatTensor] = None,
-        Sf: Optional[torch.FloatTensor] = None,
-        u: Optional[torch.FloatTensor] = None,
-        s: Optional[torch.FloatTensor] = None,
+        Xf: Optional[torch.FloatTensor],
+        Uf: Optional[torch.FloatTensor],
+        Sf: torch.FloatTensor,
     ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
         """ This method implementation does not change anything, but it adds type support for forward calls. """
-        return super().__call__(Xh, Uh, Sh, Xf, Sf, u, s)
+        return super().__call__(Xh, Uh, Sh, Xf, Uf, Sf)
 
     def forward(
         self,
@@ -60,9 +59,8 @@ class FzNetwork(_FloatzoneModule):
         Uh: torch.FloatTensor,
         Sh: torch.FloatTensor,
         Xf: Optional[torch.FloatTensor],
-        Sf: Optional[torch.FloatTensor],
-        u: Optional[torch.FloatTensor],
-        s: Optional[torch.FloatTensor],
+        Uf: Optional[torch.FloatTensor],
+        Sf: torch.FloatTensor,
     ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
         z1 = self.history_encoder(Xh, Uh, Sh)
         z1 = self.z1_post_encoder_layers(z1)
@@ -74,9 +72,8 @@ class FzNetwork(_FloatzoneModule):
         else:
             u_pred = None
 
-        if self.config.has_dynamics_network and u is not None:
-            assert s is not None
-            x_pred = self.dynamics_network(u, s, z1)
+        if self.config.has_dynamics_network and Uf is not None:
+            x_pred = self.dynamics_network(Uf, Sf, z1)
         else:
             x_pred = None
 

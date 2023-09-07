@@ -5,7 +5,7 @@ import threading
 import time
 from copy import copy
 from queue import Queue
-from typing import Generator, Type
+from typing import Generator, Optional, Type
 
 import numpy as np
 import torch
@@ -17,7 +17,7 @@ from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
 
 
-def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files = 0) -> Dataset:
+def load_data_files(npz_files: list[str], train_cfg: Optional[TrainConfig], max_num_files = 0) -> Dataset:
     """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
 
@@ -32,7 +32,7 @@ def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files 
     for npz_file in npz_files[:max_num_files]:
         arrs = np.load(npz_file)
         X, U, S = arrs["X"], arrs["U"], arrs["S"]
-        if len(X) < train_cfg.H + train_cfg.F + 3:
+        if train_cfg and len(X) < train_cfg.H + train_cfg.F + 3:
             # Ignore files with too little data to be useful
             continue
         sets.append((X, U, S))
@@ -119,25 +119,23 @@ def _start_dataloader_thread(
             Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float32)
             Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float32)
             Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float32)
+            Uf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.ULabels)), dtype=np.float32)
             Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
-            u  = np.empty((train_cfg.batch_size, len(env.ULabels)), dtype=np.float32)
-            s  = np.empty((train_cfg.batch_size, 2, sum(env.S_bin_count)), dtype=np.float32)
 
-            set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True, p=p)
+            set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True)
 
             for i in range(train_cfg.batch_size):
                 X, U, S = dataset[set_index[i]]
                 start_iter = random.randint(0, len(X) - train_cfg.H - train_cfg.F - 1)
 
-                Xh[i] = X[start_iter:start_iter + train_cfg.H]
-                Uh[i] = U[start_iter:start_iter + train_cfg.H]
-                Sh[i] = S[start_iter:start_iter + train_cfg.H]
-                Xf[i] = X[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
-                Sf[i] = S[start_iter + train_cfg.H:start_iter + train_cfg.H + train_cfg.F]
-                u[i]  = U[start_iter + train_cfg.H]
-                s[i]  = S[start_iter + train_cfg.H:start_iter + train_cfg.H + 2]
+                Xh[i] = X[start_iter : start_iter + train_cfg.H]
+                Uh[i] = U[start_iter : start_iter + train_cfg.H]
+                Sh[i] = S[start_iter : start_iter + train_cfg.H]
+                Xf[i] = X[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
+                Uf[i] = U[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
+                Sf[i] = S[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
 
-            buffer.put(numpy_to_torch_device(Xh, Uh, Sh, Xf, Sf, u, s))
+            buffer.put(numpy_to_torch_device(Xh, Uh, Sh, Xf, Uf, Sf))
 
     thread = threading.Thread(target=task, daemon=True)
     thread.start()

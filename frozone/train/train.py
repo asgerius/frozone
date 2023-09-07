@@ -74,7 +74,7 @@ def train(job: JobDescription):
             fc_layer_num = job.fc_layer_num,
             fc_layer_size = job.fc_layer_size,
             resnext_cardinality = job.resnext_cardinality,
-            dropout_p = job.dropout_p,
+            dropout = job.dropout,
             activation_fn = job.activation_fn,
         )).to(device)
         models.append(model)
@@ -92,7 +92,14 @@ def train(job: JobDescription):
                 "Total:            %s" % thousands_seperators(model.numel()),
             )
 
-    loss_fn = torch.nn.L1Loss()
+    loss_fn = torch.nn.L1Loss(reduction="none")
+    loss_weight = 1 / 2 ** torch.arange(train_cfg.F).to(device)
+    loss_weight = loss_weight / loss_weight.sum()
+    def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
+        loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
+        return (loss.T @ loss_weight).mean()
+    def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
+        return loss_fn(u_target, u_pred).mean()
 
     train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, train_cfg.phase)
     test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
@@ -142,11 +149,11 @@ def train(job: JobDescription):
                     test_loss_u = np.empty(train_cfg.num_eval_batches)
                     test_loss = np.empty(train_cfg.num_eval_batches)
                     for k in range(train_cfg.num_eval_batches):
-                        Xh, Uh, Sh, Xf, Sf, u, s = next(test_dataloader)
+                        Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
                         with TT.profile("Forward"):
-                            _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
-                        test_loss_x[k] = loss_fn(Xf[:, 1], pred_x).item() if pred_x is not None else torch.tensor(0)
-                        test_loss_u[k] = loss_fn(u, pred_u).item() if pred_u is not None else torch.tensor(0)
+                            _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Uf, Sf)
+                        test_loss_x[k] = loss_fn_x(Xf, pred_x).item() if pred_x is not None else torch.tensor(0)
+                        test_loss_u[k] = loss_fn_u(Uf[:, 0], pred_u).item() if pred_u is not None else torch.tensor(0)
                         test_loss[k] = (1 - train_cfg.alpha) * test_loss_x[k] + train_cfg.alpha * test_loss_u[k]
                         assert not np.isnan(test_loss[k])
                     train_results.test_loss_x[j].append(test_loss_x.mean())
@@ -201,14 +208,14 @@ def train(job: JobDescription):
             scheduler = schedulers[j]
 
             with TT.profile("Get data"):
-                Xh, Uh, Sh, Xf, Sf, u, s = next(train_dataloader)
+                Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
             with TT.profile("Forward"):
-                _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Sf, u, s)
+                _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Uf, Sf)
                 cuda_sync()
 
             with TT.profile("Backward"):
-                loss_x = loss_fn(Xf[:, 1], pred_x) if pred_x is not None else torch.tensor(0)
-                loss_u = loss_fn(u, pred_u) if pred_u is not None else torch.tensor(0)
+                loss_x = loss_fn_x(Xf, pred_x) if pred_x is not None else torch.tensor(0)
+                loss_u = loss_fn_u(Uf[:, 0], pred_u) if pred_u is not None else torch.tensor(0)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
                 assert not torch.isnan(loss).isnan().any()
                 train_results.train_loss_x[j].append(loss_x.item())

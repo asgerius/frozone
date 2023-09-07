@@ -36,7 +36,7 @@ options = (
     Option("fc-layer-num", type=int, default=3),
     Option("fc-layer-size", type=int, default=400),
     Option("resnext-cardinality", type=int, default=1),
-    Option("dropout-p", type=float, default=0),
+    Option("dropout", type=float, default=0),
     Option("activation-fn", default="ReLU"),
 )
 

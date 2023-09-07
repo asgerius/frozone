@@ -35,7 +35,7 @@ class FzConfig(DataStorage):
 
     resnext_cardinality: int
 
-    dropout_p: float
+    dropout: float
     activation_fn: str = "ReLU"
 
     def __post_init__(self):
@@ -51,7 +51,7 @@ class FzConfig(DataStorage):
 
         assert self.resnext_cardinality > 0
 
-        assert 0 <= self.dropout_p <= 1
+        assert 0 <= self.dropout <= 1
 
     def get_activation_fn(self) -> nn.Module:
         return getattr(nn, self.activation_fn)()
@@ -139,7 +139,7 @@ class _FloatzoneModule(nn.Module, abc.ABC):
                 modules += (
                     self.config.get_activation_fn(),
                     nn.BatchNorm1d(out_size),
-                    nn.Dropout(p=self.config.dropout_p),
+                    nn.Dropout(p=self.config.dropout),
                 )
 
         return modules
@@ -158,7 +158,7 @@ class _FloatzoneModule(nn.Module, abc.ABC):
             modules += (
                 self.config.get_activation_fn(),
                 nn.BatchNorm1d(self.config.fc_layer_size),
-                nn.Dropout(p=self.config.dropout_p),
+                nn.Dropout(p=self.config.dropout),
             )
 
         modules.append(nn.Linear(in_size, self.config.fc_layer_size))

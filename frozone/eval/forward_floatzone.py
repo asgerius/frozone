@@ -26,7 +26,7 @@ def forward(
     forward_cfg: ForwardConfig,
 ):
     predict_steps = int(forward_cfg.prediction_window // train_cfg.dt)
-    timesteps = train_cfg.H + predict_steps + 1
+    timesteps = train_cfg.H + train_cfg.F + predict_steps - 1
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
     dataset = [(X, U, S) for X, U, S in dataset if len(X) >= timesteps]
     log("%s files after filtering" % thousands_seperators(len(dataset)))
@@ -35,15 +35,15 @@ def forward(
     dataset = [dataset[i] for i in np.random.choice(len(dataset), forward_cfg.num_samples, replace=False)]
 
     log("Sampling start indices")
-    X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=env.X_dtype)
-    U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
-    S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
+    X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=np.float32)
+    U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=np.float32)
+    S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=np.float32)
     for i, (X, U, S) in enumerate(dataset):
         start_index = np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]
         U_true[i] = U[start_index : start_index + timesteps]
         S_true[i] = S[start_index : start_index + timesteps]
-    X_pred = np.stack([X_true] * train_cfg.num_models, axis=2)
+    X_pred = np.stack([X_true[:, : train_cfg.H + predict_steps]] * train_cfg.num_models, axis=2)
 
     X_pred, U_true, S_true = numpy_to_torch_device(X_pred, U_true, S_true)
 
@@ -52,24 +52,25 @@ def forward(
         TT.profile("Time step")
         log.debug("Step %i / %i" % (i, predict_steps))
         for j, model in enumerate(models):
-            _, X_pred[:, train_cfg.H + i + 1, j], _ = model(
+            X_pred[:, train_cfg.H + i, j] = model(
                 X_pred[:, i : i + train_cfg.H, j],
                 U_true[:, i : i + train_cfg.H],
                 S_true[:, i : i + train_cfg.H],
-                u = U_true[:, i + train_cfg.H],
-                s = S_true[:, i + train_cfg.H : i + train_cfg.H + 2],
-            )
+                Xf = None,
+                Uf = U_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
+                Sf = S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
+            )[1][:, 0]
 
         TT.end_profile()
 
     with TT.profile("Unstandardize"):
         X_true = X_true * train_results.std_x + train_results.mean_x
-        X_pred = X_pred * train_results.std_x + train_results.mean_x
-        U_true = U_true * train_results.std_u + train_results.mean_u
+        X_pred = X_pred.cpu().numpy() * train_results.std_x + train_results.mean_x
+        U_true = U_true.cpu().numpy() * train_results.std_u + train_results.mean_u
 
     log("Plotting samples")
     with TT.profile("Plot"):
-        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, X_pred.cpu().numpy(), U_true.cpu().numpy())
+        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, X_pred, U_true)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -106,6 +107,6 @@ if __name__ == "__main__":
 
         log.section("Running forward evaluation")
         with TT.profile("Forward evaluation"):
-            forward(job.location, env, models, test_dataset, train_cfg, train_results, ForwardConfig(num_samples=3, prediction_window=400))
+            forward(job.location, env, models, test_dataset, train_cfg, train_results, ForwardConfig(num_samples=3, prediction_window=150))
 
         log(TT)
