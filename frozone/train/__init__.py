@@ -8,7 +8,7 @@ import numpy as np
 from pelutils import DataStorage
 
 
-# This global variables is used to indicate to threads whether or not a training is running.
+# This global variable is used to indicate to threads whether or not a training is running.
 # If it is false, threads should stop within a very short amount of time.
 is_doing_training = False
 
@@ -18,6 +18,7 @@ class TrainConfig(DataStorage):
     # Environment should match name of a class in simulations
     env:                str
     data_path:          str
+    phase:              Optional[str]
 
     # Windows are given in seconds
     dt:                 float

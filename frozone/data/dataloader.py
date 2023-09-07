@@ -5,18 +5,17 @@ import threading
 import time
 from copy import copy
 from queue import Queue
-from typing import Generator, List, Tuple, Type
+from typing import Generator, Type
 
 import numpy as np
 import torch
 
 import frozone.train
 from frozone import device
+from frozone.data import Dataset
 from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
 
-
-Dataset = List[Tuple[np.ndarray, np.ndarray, np.ndarray]]
 
 def load_data_files(npz_files: list[str], train_cfg: TrainConfig, max_num_files = 0) -> Dataset:
     """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which

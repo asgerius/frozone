@@ -1,6 +1,5 @@
 import math
 import os
-from glob import glob as glob  # glob
 from typing import Type
 
 import numpy as np
@@ -10,6 +9,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
 from frozone import device
+from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
@@ -36,6 +36,7 @@ def train(job: JobDescription):
     train_cfg = TrainConfig(
         env = job.env,
         data_path = job.data_path,
+        phase = job.phase,
         dt = job.dt,
         history_window = job.history_window,
         prediction_window = job.prediction_window,
@@ -93,8 +94,8 @@ def train(job: JobDescription):
 
     loss_fn = torch.nn.L1Loss()
 
-    train_npz_files = glob(os.path.join(train_cfg.data_path, PROCESSED_SUBDIR, TRAIN_SUBDIR, "**", "*.npz"), recursive=True)
-    test_npz_files = glob(os.path.join(train_cfg.data_path, PROCESSED_SUBDIR, TEST_SUBDIR, "**", "*.npz"), recursive=True)
+    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, train_cfg.phase)
+    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
     log(
         "Found data files",
         "Train: %s (%.2f %%)" % (thousands_seperators(len(train_npz_files)), 100 * len(train_npz_files) / (len(train_npz_files) + len(test_npz_files))),

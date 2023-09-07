@@ -12,25 +12,8 @@ from pelutils import log, split_path, thousands_seperators
 from pelutils.parser import Parser, Option
 from tqdm import tqdm
 
-from frozone.data import RAW_SUBDIR
+from frozone.data import RAW_SUBDIR, PHASES
 
-
-_phases = {
-    1: "Inactive",
-    2: "All_Ready",
-    4: "Preheating",
-    8: "Drop",
-    16: "Snoevs",
-    32: "Vending",
-    64: "Necking",
-    128: "Unused",
-    256: "PreCone",
-    512: "Cone",
-    1024: "Full_Diameter",
-    2048: "Fast_Closing",
-    4096: "Closing",
-    8192: "Cooling",
-}
 
 _plot_folder = "analysis-plots"
 
@@ -63,7 +46,12 @@ def plot_phase_distribution(path: str, num_lines_by_phase: defaultdict[int, list
             num_lines = np.array(num_lines_by_phase[phase_number])
             plt.axvline(num_lines.mean(), color=plots.colours[i], lw=2)
             num_lines = num_lines[num_lines<10000]
-            plt.plot(*plots.histogram(num_lines, bins=25, density=True, ignore_zeros=True), "--o", color=plots.colours[i], label=_phases[phase_number])
+            plt.plot(
+                *plots.histogram(num_lines, bins=25, density=True, ignore_zeros=True),
+                "--o",
+                color=plots.colours[i],
+                label=PHASES[phase_number],
+            )
         plt.title("Number of data lines by phase")
         plt.xscale("log")
         plt.yscale("log")
@@ -76,7 +64,7 @@ if __name__ == "__main__":
     parser = Parser(Option("max-files", type=int, default=None))
     job = parser.parse_args()
 
-    log.configure(os.path.join(job.location, "analysis.log"))
+    log.configure(os.path.join(job.location, "analysis.log"), print_level=None)
 
     with log.log_errors:
         raw_files = glob(os.path.join(job.location, RAW_SUBDIR, "**", "*.txt"), recursive=True)
@@ -107,7 +95,7 @@ if __name__ == "__main__":
                 continue
 
             for phase_number, count in lines_by_phase.items():
-                if phase_number not in _phases:
+                if phase_number not in PHASES:
                     log.warning("Phase number %i encountered in %s" % (phase_number, raw_file))
                     continue
                 num_lines_by_phase[phase_number].append(count)
