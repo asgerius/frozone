@@ -6,7 +6,7 @@ from typing import Type
 import numpy as np
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
-from pelutils import TT, JobDescription, log, thousands_seperators
+from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
 from frozone import device
@@ -30,6 +30,8 @@ def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
     )
 
 def train(job: JobDescription):
+
+    log(HardwareInfo.string())
 
     train_cfg = TrainConfig(
         env = job.env,
