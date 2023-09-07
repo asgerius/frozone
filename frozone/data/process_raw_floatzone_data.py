@@ -94,13 +94,26 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> defaultdict[int, Datas
 
     # df = df.iloc[use_slice]
 
+    # The minimum number of seconds a run should have been going for in order to be included
+    min_seconds = {
+        "Cone": 4000,
+        "Full_Diameter": 7000,
+    }
+
     data = defaultdict(list)
 
-    for phase_number in PHASES:
+    for phase_number, phase_name in PHASES.items():
+        if phase_name not in min_seconds:
+            # This case has not yet been considered, and so no data is made to save time
+            continue
+
         is_correct_phase = df.Growth_State_Act.values == phase_number
         slices = split_bool_array_into_sections(is_correct_phase)
 
         for slice in slices:
+            if (slice.stop - slice.start) * 6 < min_seconds[phase_name]:
+                continue
+
             df_used = df.iloc[slice]
             n = len(df_used)
 
