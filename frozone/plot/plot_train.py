@@ -13,10 +13,10 @@ from frozone.train import TrainConfig, TrainResults
 # completely breaks when having an asynchronous data loader.
 matplotlib.use('Agg')
 
-_save_folder = "train-plots"
+_plot_folder = "train-plots"
 
 def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
-    with TT.profile("Plot loss"), plots.Figure(os.path.join(loc, _save_folder, "loss.png")):
+    with TT.profile("Plot loss"), plots.Figure(os.path.join(loc, _plot_folder, "loss.png")):
         plot_both = 0 < train_cfg.alpha < 1
         plot_dynamics = plot_both or train_cfg.alpha == 0
         plot_control = plot_both or train_cfg.alpha == 1
@@ -64,7 +64,7 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         plt.grid()
 
 def plot_lr(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
-    with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _save_folder, "lr.png")):
+    with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _plot_folder, "lr.png")):
         plt.plot(train_results.lr)
 
         plt.xlabel("Batch")

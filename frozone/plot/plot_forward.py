@@ -16,7 +16,7 @@ from frozone.train import TrainConfig, TrainResults
 # completely breaks when having an asynchronous data loader.
 matplotlib.use('Agg')
 
-_save_folder = "forward-plots"
+_plot_folder = "forward-plots"
 
 def plot_forward(
     path: str,
@@ -28,12 +28,12 @@ def plot_forward(
     X_pred: np.ndarray,
     U_true: np.ndarray,
 ):
-    shutil.rmtree(os.path.join(path, _save_folder), ignore_errors=True)
+    shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
     timestamps = np.arange(X_true.shape[1]) * train_cfg.dt
     for i in range(forward_cfg.num_samples):
         for j in range(len(env.XLabels)):
-            with plots.Figure(os.path.join(path, _save_folder, "sample_%i" % i, env.XLabels(j).name + ".png")):
+            with plots.Figure(os.path.join(path, _plot_folder, "sample_%i" % i, env.XLabels(j).name + ".png")):
                 for k in range(train_cfg.num_models):
                     plt.plot(
                         timestamps, X_pred[i, :, k, j], "-o", color="grey", alpha=0.5,
