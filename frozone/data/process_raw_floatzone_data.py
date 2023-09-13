@@ -81,22 +81,9 @@ def keep_automode_slice(automode: np.ndarray) -> slice:
 
 def parse_floatzone_df(df: pd.DataFrame, machine: str) -> defaultdict[int, Dataset]:
 
-    # automode = df["Automode_GenVoltage"].values   & df["Automode_PolyPull"].values & \
-    #            df["Automode_CrysPull"].values     & df["Automode_PolyRotation"].values & \
-    #            df["Automode_CrysRotation"].values & df["Automode_CoilPos"].values & \
-    #            df["External_Control"].values
-
-    # # Only use data from when automation is active
-    # # Values can be messy outside this range
-    # use_slice = keep_automode_slice(automode)
-
-    # assert (use_slice.stop - use_slice.start) / len(df) > 0.8 or len(df) < 2000, f"{use_slice.stop - use_slice.start} / {len(df)}"
-
-    # df = df.iloc[use_slice]
-
     # The minimum number of seconds a run should have been going for in order to be included
     min_seconds = {
-        "Cone": 4000,
+        "Cone": 7000,
         "Full_Diameter": 7000,
     }
 
@@ -115,6 +102,18 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> defaultdict[int, Datas
                 continue
 
             df_used = df.iloc[slice]
+
+            automode = df["Automode_GenVoltage"].values   & df["Automode_PolyPull"].values & \
+                       df["Automode_CrysPull"].values     & df["Automode_PolyRotation"].values & \
+                       df["Automode_CrysRotation"].values & df["Automode_CoilPos"].values & \
+                       df["External_Control"].values
+
+            # # Only use data from when automation is active
+            # # Values can be messy outside this range
+            use_slice = keep_automode_slice(automode)
+
+            df = df.iloc[use_slice]
+
             n = len(df_used)
 
             X = np.empty((n, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
@@ -148,16 +147,16 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> defaultdict[int, Datas
             # U[:, FloatZone.ULabels.CrysRotation]   = df["CrysRotation[rpm]"].values
             # U[:, FloatZone.ULabels.CoilPosition]   = df["CoilPosition[mm]"].values
 
-            PLC_count = FloatZone.S_bin_count[FloatZone.SLabels.PLCState]
+            PLC_count = 0 #FloatZone.S_bin_count[FloatZone.SLabels.PLCState]
             # growth_state_index = {1: 0, 2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6,
             #                       256: 7, 512: 8, 1024: 9, 2048: 10, 4096: 11, 8192: 12}
             # assert len(growth_state_index) == FloatZone.S_bin_count[FloatZone.SLabels.GrowthState]
             # used_indices = set(growth_state_index.values())
             # assert all(i in used_indices for i in range(len(growth_state_index)))
             for i in range(n):
-                binary_str = f"{df_used['PLC_State_Act'].values[i]:032b}"
-                plc_is_true = [bool(int(b)) for b in binary_str]
-                S[i, :PLC_count][plc_is_true] = 1
+                # binary_str = f"{df_used['PLC_State_Act'].values[i]:032b}"
+                # plc_is_true = [bool(int(b)) for b in binary_str]
+                # S[i, :PLC_count][plc_is_true] = 1
 
                 # S[i, PLC_count+growth_state_index[df["Growth_State_Act"].values[i]]] = 1
 
@@ -198,15 +197,20 @@ def process_floatzone_file(filepath: str) -> str | None:
         except Exception as e:
             return filepath + " " + str(e)
 
-def process_floatzone_data(data_path: str, processes=mp.cpu_count()) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+def process_floatzone_data(data_path: str, processes=mp.cpu_count(), max_files=None) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     log.configure(os.path.join(data_path, "process.log"), print_level=None)
 
     shutil.rmtree(os.path.join(data_path, PROCESSED_SUBDIR), ignore_errors=True)
 
     raw_files = glob(os.path.join(data_path, RAW_SUBDIR, "**", "*.txt"), recursive=True)
+    random.shuffle(raw_files)
+    raw_files = raw_files[:max_files]
     n_raw_total = len(raw_files)
     raw_files = [file for file in raw_files if os.path.join(*split_path(file)[2:]) not in BLACKLIST]
-    assert n_raw_total == len(raw_files) + len(BLACKLIST)
+    if max_files is None:
+        assert 0 < n_raw_total == len(raw_files) + len(BLACKLIST)
+    else:
+        assert 0 < n_raw_total <= len(raw_files)
 
     if processes > 1:
         with mp.Pool(processes=processes) as pool:
@@ -217,8 +221,11 @@ def process_floatzone_data(data_path: str, processes=mp.cpu_count()) -> list[tup
             results.append(process_floatzone_file(raw_file))
 
     errors = [error for error in results if error is not None]
-    print("Errors occured when reading the following files")
-    print("\n".join(errors))
+    if errors:
+        print("Errors occured when reading the following files")
+        print("\n".join(errors))
+    else:
+        print("No errors occured")
 
 if __name__ == "__main__":
-    process_floatzone_data("data-floatzone")
+    process_floatzone_data("data-floatzone", max_files=None)
