@@ -56,9 +56,9 @@ def forward(
                 X_pred[:, i : i + train_cfg.H, j],
                 U_true[:, i : i + train_cfg.H],
                 S_true[:, i : i + train_cfg.H],
+                S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
                 Xf = None,
                 Uf = U_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
-                Sf = S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
             )[1][:, 0]
 
         TT.end_profile()

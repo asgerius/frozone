@@ -28,14 +28,11 @@ options = (
     Option("epsilon", type=float, default=0),
 
     # Model parameters
-    Option("Dz", type=int, default=300),
-    Option("history-encoder", default="FullyConnected"),
-    Option("target-encoder", default="FullyConnected"),
-    Option("dynamics-network", default="FullyConnected"),
-    Option("control-network", default="FullyConnected"),
+    Option("dz", type=int, default=300),
+    Option("encoder-name", default="FullyConnected"),
+    Option("decoder-name", default="FullyConnected"),
     Option("fc-layer-num", type=int, default=3),
     Option("fc-layer-size", type=int, default=400),
-    Option("resnext-cardinality", type=int, default=1),
     Option("dropout", type=float, default=0),
     Option("activation-fn", default="ReLU"),
 )

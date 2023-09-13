@@ -61,20 +61,17 @@ def train(job: JobDescription):
     schedulers: list[lr_scheduler.LRScheduler] = list()
     for i in range(train_cfg.num_models):
         model = FzNetwork(FzConfig(
-            Dx = len(env.XLabels),
-            Du = len(env.ULabels),
-            Dz = job.Dz,
-            Ds = sum(env.S_bin_count),
+            dx = len(env.XLabels),
+            du = len(env.ULabels),
+            dz = job.dz,
+            ds = sum(env.S_bin_count),
             H = train_cfg.H,
             F = train_cfg.F,
-            history_encoder_name  = job.history_encoder,
-            target_encoder_name   = job.target_encoder,
-            dynamics_network_name = job.dynamics_network,
-            control_network_name  = job.control_network,
+            encoder_name = job.encoder_name,
+            decoder_name = job.decoder_name,
             mode = 0 if 0 < train_cfg.alpha < 1 else 1 if train_cfg.alpha == 0 else 2,
             fc_layer_num = job.fc_layer_num,
             fc_layer_size = job.fc_layer_size,
-            resnext_cardinality = job.resnext_cardinality,
             dropout = job.dropout,
             activation_fn = job.activation_fn,
         )).to(device)
@@ -86,10 +83,11 @@ def train(job: JobDescription):
             log.debug("Built model", model)
             log(
                 "Number of model parameters",
-                "History encoder:  %s" % thousands_seperators(model.history_encoder.numel()),
-                "Target encoder:   %s" % thousands_seperators(model.target_encoder.numel() if model.config.has_control_and_target else 0),
-                "Dynamics network: %s" % thousands_seperators(model.dynamics_network.numel() if model.config.has_dynamics_network else 0),
-                "Control network:  %s" % thousands_seperators(model.control_network.numel() if model.config.has_control_and_target else 0),
+                "History encoder:  %s" % thousands_seperators(model.Eh.numel()),
+                "Future encoder X: %s" % thousands_seperators(model.Ex.numel() if model.config.has_control else 0),
+                "Future encoder U: %s" % thousands_seperators(model.Eu.numel() if model.config.has_dynamics else 0),
+                "Decoder X:        %s" % thousands_seperators(model.Dx.numel() if model.config.has_dynamics else 0),
+                "Decoder U:        %s" % thousands_seperators(model.Du.numel() if model.config.has_control else 0),
                 "Total:            %s" % thousands_seperators(model.numel()),
             )
 
@@ -156,9 +154,9 @@ def train(job: JobDescription):
                     for k in range(train_cfg.num_eval_batches):
                         Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
                         with TT.profile("Forward"), amp.autocast():
-                            _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Uf, Sf)
-                        test_loss_x[k] = loss_fn_x(Xf, pred_x).item() if pred_x is not None else torch.tensor(0)
-                        test_loss_u[k] = loss_fn_u(Uf[:, 0], pred_u).item() if pred_u is not None else torch.tensor(0)
+                            _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
+                        test_loss_x[k] = loss_fn_x(Xf, Xf_pred).item() if Xf_pred is not None else torch.tensor(0)
+                        test_loss_u[k] = loss_fn_u(Uf, Uf_pred).item() if Uf_pred is not None else torch.tensor(0)
                         test_loss[k] = (1 - train_cfg.alpha) * test_loss_x[k] + train_cfg.alpha * test_loss_u[k]
                         assert not np.isnan(test_loss[k])
                     train_results.test_loss_x[j].append(test_loss_x.mean())
@@ -215,9 +213,9 @@ def train(job: JobDescription):
             with TT.profile("Get data"):
                 Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
             with TT.profile("Forward"), amp.autocast():
-                _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Uf, Sf)
-                loss_x = loss_fn_x(Xf, pred_x) if pred_x is not None else torch.tensor(0)
-                loss_u = loss_fn_u(Uf[:, 0], pred_u) if pred_u is not None else torch.tensor(0)
+                _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
+                loss_x = loss_fn_x(Xf, Xf_pred) if Xf_pred is not None else torch.tensor(0)
+                loss_u = loss_fn_u(Uf, Uf_pred) if Uf_pred is not None else torch.tensor(0)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
                 assert not torch.isnan(loss).isnan().any()
                 train_results.train_loss_x[j].append(loss_x.item())

@@ -14,18 +14,16 @@ from frozone import device
 @dataclass
 class FzConfig(DataStorage):
 
-    Dx: int  # Number of process variables
-    Du: int  # Number of control variables
-    Ds: int  # Number of static variables after binary encoding
-    Dz: int  # Number of latent variables
+    dx: int  # Number of process variables
+    du: int  # Number of control variables
+    ds: int  # Number of static variables after binary encoding
+    dz: int  # Number of latent variables
 
     H: int  # Number of history steps
     F: int  # Number of target steps
 
-    history_encoder_name:  str
-    target_encoder_name:   str
-    dynamics_network_name: str
-    control_network_name:  str
+    encoder_name: str
+    decoder_name: str
 
     # 0 for both dynamics and control, 1 for dynamics only, and 2 for control only
     mode: int
@@ -33,64 +31,32 @@ class FzConfig(DataStorage):
     fc_layer_num:  int
     fc_layer_size: int
 
-    resnext_cardinality: int
-
     dropout: float
     activation_fn: str = "ReLU"
 
     def __post_init__(self):
-        assert self.Dx > 0
-        assert self.Du > 0
-        assert self.Ds >= 0
-        assert self.Dz > 0
+        assert self.dx > 0
+        assert self.du > 0
+        assert self.ds >= 0
+        assert self.dz > 0
         assert self.H > 0
         assert self.F > 0
 
         assert self.fc_layer_num > 0
         assert self.fc_layer_size > 0
 
-        assert self.resnext_cardinality > 0
-
-        assert 0 <= self.dropout <= 1
+        assert 0 <= self.dropout < 1
 
     def get_activation_fn(self) -> nn.Module:
         return getattr(nn, self.activation_fn)()
 
     @property
-    def has_dynamics_network(self) -> bool:
+    def has_dynamics(self) -> bool:
         return self.mode in { 0, 1 }
 
     @property
-    def has_control_and_target(self) -> bool:
+    def has_control(self) -> bool:
         return self.mode in { 0, 2 }
-
-class ResnextBlock(nn.Module):
-    """ ResNeXt block as proposed in https://arxiv.org/pdf/1611.05431.pdf.
-    Each residual block uses the PreResNet architecture from https://arxiv.org/pdf/1603.05027.pdf.
-    The ordering of batch normalization and activation function is changed though. See
-    https://stackoverflow.com/questions/39691902/ordering-of-batch-normalization-and-dropout. """
-
-    def __init__(self, size: int, config: FzConfig):
-        super().__init__()
-
-        self.config = config
-
-        for i in range(config.resnext_cardinality):
-            setattr(self, f"resnext_{i}", nn.Sequential(
-                # config.get_activation_fn(),
-                # nn.BatchNorm1d(size),
-                nn.Linear(size, size),
-                config.get_activation_fn(),
-                nn.BatchNorm1d(size),
-                nn.Linear(size, size),
-            ))
-
-    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        Fx = torch.zeros_like(x)
-        for i in range(self.config.resnext_cardinality):
-            Fx += getattr(self, f"resnext_{i}")(x)
-
-        return x + Fx
 
 class _FloatzoneModule(nn.Module, abc.ABC):
 
@@ -141,33 +107,5 @@ class _FloatzoneModule(nn.Module, abc.ABC):
                     nn.BatchNorm1d(out_size),
                     nn.Dropout(p=self.config.dropout),
                 )
-
-        return modules
-
-    def build_resnext(self, in_size: int, out_size: int) -> list[nn.Module]:
-        """ Same as a build_fully_connected, but with aggregated residual blocks as described in
-        https://arxiv.org/pdf/1512.03385.pdf (ResNet) and https://arxiv.org/pdf/1611.05431.pdf (ResNeXt).
-
-        For simplicity, this reuses the fc_layer_num and fc_layer_size config parameters for the blocks.
-        A linear layer is added at each end to reshape the data into the appropriate shapes. """
-
-        modules = list()
-
-        def add_intermediate_ops():
-            nonlocal modules
-            modules += (
-                self.config.get_activation_fn(),
-                nn.BatchNorm1d(self.config.fc_layer_size),
-                nn.Dropout(p=self.config.dropout),
-            )
-
-        modules.append(nn.Linear(in_size, self.config.fc_layer_size))
-        add_intermediate_ops()
-
-        for i in range(self.config.fc_layer_num):
-            modules.append(ResnextBlock(self.config.fc_layer_size, self.config))
-            add_intermediate_ops()
-
-        modules.append(nn.Linear(self.config.fc_layer_size, out_size))
 
         return modules

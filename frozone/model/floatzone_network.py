@@ -5,76 +5,61 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-import frozone.model.history_encoders as history_encoders
-import frozone.model.target_encoders as target_encoders
-import frozone.model.dynamics_networks as dynamics_networks
-import frozone.model.control_networks as control_networks
+import frozone.model.encoders_h as encoders_h
+import frozone.model.encoders_f as encoders_f
+import frozone.model.decoders as decoders
 from frozone.model import FzConfig, _FloatzoneModule
 
 class FzNetwork(_FloatzoneModule):
 
-    history_encoder:  history_encoders._HistoryEncoder
-    target_encoder:   target_encoders._TargetEncoder
-    dynamics_network: dynamics_networks._DynamicsNetwork
-    control_network:  control_networks._ControlNetwork
+    Eh: encoders_h.EncoderH
+    Eu: encoders_f.EncoderF
+    Ex: encoders_f.EncoderF
+    Dx: decoders.Decoder
+    Du: decoders.Decoder
 
     def __init__(self, config: FzConfig):
         super().__init__(config)
 
-        self.history_encoder = getattr(history_encoders,  self.config.history_encoder_name)(config)
-        self.z1_post_encoder_layers = nn.Sequential(
-            config.get_activation_fn(),
-            nn.BatchNorm1d(config.Dz),
-            nn.Dropout(config.dropout),
-        )
-        if config.has_control_and_target:
-            self.target_encoder = getattr(target_encoders,   self.config.target_encoder_name)(config)
-            self.z2_post_encoder_layers = nn.Sequential(
-                config.get_activation_fn(),
-                nn.BatchNorm1d(config.Dz),
-                nn.Dropout(config.dropout),
-            )
+        self.Eh = getattr(encoders_h, self.config.encoder_name)(config)
 
-        if config.has_dynamics_network:
-            self.dynamics_network = getattr(dynamics_networks, self.config.dynamics_network_name)(config)
-        if config.has_control_and_target:
-            self.control_network  = getattr(control_networks,  self.config.control_network_name)(config)
-
+        if config.has_dynamics:
+            self.Eu = getattr(encoders_f, self.config.encoder_name)(config, config.du)
+            self.Dx = getattr(decoders, self.config.decoder_name)(config, is_x=True)
+        if config.has_control:
+            self.Ex = getattr(encoders_f, self.config.encoder_name)(config, config.dx)
+            self.Du = getattr(decoders, self.config.decoder_name)(config, is_x=False)
 
     def __call__(
         self,
         Xh: torch.FloatTensor,
         Uh: torch.FloatTensor,
         Sh: torch.FloatTensor,
-        Xf: Optional[torch.FloatTensor],
-        Uf: Optional[torch.FloatTensor],
-        Sf: torch.FloatTensor,
-    ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
+        Sf: torch.FloatTensor, *,
+        Xf: Optional[torch.FloatTensor] = None,
+        Uf: Optional[torch.FloatTensor] = None,
+    ) -> tuple[tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]], Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
         """ This method implementation does not change anything, but it adds type support for forward calls. """
-        return super().__call__(Xh, Uh, Sh, Xf, Uf, Sf)
+        return super().__call__(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
 
     def forward(
         self,
         Xh: torch.FloatTensor,
         Uh: torch.FloatTensor,
         Sh: torch.FloatTensor,
+        Sf: torch.FloatTensor, *,
         Xf: Optional[torch.FloatTensor],
         Uf: Optional[torch.FloatTensor],
-        Sf: torch.FloatTensor,
-    ) -> tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
-        z1 = self.history_encoder(Xh, Uh, Sh)
-        z1 = self.z1_post_encoder_layers(z1)
+    ) -> tuple[tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]], Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
+        zh = self.Eh(Xh, Uh, Sh)
+        Zu = Zx = Xf_pred = Uf_pred = None
 
-        if self.config.has_control_and_target and Xf is not None:
-            z2 = self.target_encoder(Xf, Sf)
-            z2 = self.z2_post_encoder_layers(z2)
-            u_pred = self.control_network(z1, z2)
-        else:
-            u_pred = None
+        if self.config.has_dynamics and Uf is not None:
+            Zu = self.Eu(Sf, Xf_or_Uf=Uf)
+            Xf_pred = self.Dx(zh, Zu)
 
-        if self.config.has_dynamics_network and Uf is not None:
-            x_pred = self.dynamics_network(Uf, Sf, z1)
-        else:
-            x_pred = None
+        if self.config.has_control and Xf is not None:
+            Zx = self.Ex(Sf, Xf_or_Uf=Xf)
+            Uf_pred = self.Du(zh, Zx)
 
-        return z1, x_pred, u_pred
+        return (zh, Zu, Zx), Xf_pred, Uf_pred
