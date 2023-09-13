@@ -52,6 +52,8 @@ def train(job: JobDescription):
     )
     train_results = TrainResults.empty(train_cfg.num_models)
 
+    log("Training configuration", train_cfg)
+
     env: Type[environments.Environment] = getattr(environments, train_cfg.env)
     log("Got environment %s" % env.__name__)
 

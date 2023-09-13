@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import os
 from dataclasses import dataclass
+from pprint import pformat
 
 import torch
 import torch.nn as nn
@@ -57,6 +58,9 @@ class FzConfig(DataStorage):
     @property
     def has_control(self) -> bool:
         return self.mode in { 0, 2 }
+
+    def __str__(self) -> str:
+        return pformat(vars(self))
 
 class _FloatzoneModule(nn.Module, abc.ABC):
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pprint import pformat
 from typing import Optional
 
 import numpy as np
@@ -53,6 +54,9 @@ class TrainConfig(DataStorage):
     @property
     def num_eval_batches(self) -> int:
         return math.ceil(self.eval_size / self.batch_size)
+
+    def __str__(self) -> str:
+        return pformat(vars(self))
 
 @dataclass
 class TrainResults(DataStorage):
