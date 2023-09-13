@@ -7,7 +7,7 @@ from pelutils import TT, log, thousands_seperators
 from pelutils.parser import Parser
 
 import frozone.environments as environments
-from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, list_processed_data_files
+from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import Dataset, dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import ForwardConfig
 from frozone.model.floatzone_network import FzNetwork
@@ -32,7 +32,7 @@ def forward(
     log("%s files after filtering" % thousands_seperators(len(dataset)))
 
     log("Sampling %i cases from the dataset" % forward_cfg.num_samples)
-    dataset = [dataset[i] for i in np.random.choice(len(dataset), forward_cfg.num_samples, replace=False)]
+    dataset = [dataset[i] for i in np.random.choice(len(dataset), forward_cfg.num_samples, replace=True)]
 
     log("Sampling start indices")
     X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=np.float32)
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
         log("Loading data")
         with TT.profile("Load data"):
-            test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
+            test_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, train_cfg.phase)
             test_dataset = load_data_files(test_npz_files, train_cfg)
             log(
                 "Loaded dataset",

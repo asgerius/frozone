@@ -13,7 +13,7 @@ import torch
 import frozone.train
 from frozone import device
 from frozone.data import DataSequence, Dataset
-from frozone.environments import Environment
+from frozone.environments import Environment, FloatZone
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -89,12 +89,30 @@ def standardize(
             U[...] = U - train_results.mean_u
 
     eps = 1e-6
-    for X, U, S in dataset:
+    for i, (X, U, S) in enumerate(dataset):
         X[...] = X / (train_results.std_x + eps)
         U[...] = U / (train_results.std_u + eps)
 
+        dataset[i] = tuple(data.astype(np.float16) for data in dataset[i])
+
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
-    return [torch.from_numpy(x).to(device) for x in args]
+    return [torch.from_numpy(x).to(device).float() for x in args]
+
+def include_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.ndarray:
+
+    if env is FloatZone:
+        xlabels = FloatZone.XLabels
+        x_exclude = {
+            "Cone": (xlabels.MeltNeck, )
+        }[train_cfg.phase]
+    else:
+        x_exclude = tuple()
+    # log("Excluding the the following process variables", [lab.name for lab in loss_x_exclude])
+    x_include = np.ones(len(env.XLabels), dtype=np.float32)
+    for xlab in x_exclude:
+        x_include[xlab.value] = 0
+
+    return x_include
 
 def _start_dataloader_thread(
     env: Type[Environment],
@@ -102,6 +120,9 @@ def _start_dataloader_thread(
     dataset: Dataset,
     buffer: Queue[DataSequence],
 ):
+
+    x_include = include_vector(env, train_cfg)
+
     def task():
 
         # Probability to select a given set is proportional to the amount of data in it
@@ -115,12 +136,12 @@ def _start_dataloader_thread(
                 continue
 
             # These should not be changed to torch, as the sampling is apparently much faster in numpy
-            Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.XLabels)), dtype=np.float32)
-            Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float32)
-            Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float32)
-            Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float32)
-            Uf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.ULabels)), dtype=np.float32)
-            Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
+            Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.XLabels)), dtype=np.float16)
+            Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float16)
+            Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float16)
+            Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float16)
+            Uf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.ULabels)), dtype=np.float16)
+            Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float16)
 
             set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True)
 
@@ -135,7 +156,7 @@ def _start_dataloader_thread(
                 Uf[i] = U[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
                 Sf[i] = S[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
 
-            buffer.put(numpy_to_torch_device(Xh, Uh, Sh, Xf, Uf, Sf))
+            buffer.put(numpy_to_torch_device(Xh * x_include, Uh, Sh, Xf * x_include, Uf, Sf))
 
     thread = threading.Thread(target=task, daemon=True)
     thread.start()

@@ -12,7 +12,7 @@ from frozone.train.train import train
 options = (
     Argument("env"),
     Argument("data-path"),
-    Option("phase", default=None),
+    Option("phase", default="Cone"),
 
     # Training parameters
     Option("dt", type=float, default=6),

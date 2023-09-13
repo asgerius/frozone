@@ -65,7 +65,7 @@ class FzNetwork(_FloatzoneModule):
         z1 = self.history_encoder(Xh, Uh, Sh)
         z1 = self.z1_post_encoder_layers(z1)
 
-        if self.config.has_control_and_target:
+        if self.config.has_control_and_target and Xf is not None:
             z2 = self.target_encoder(Xf, Sf)
             z2 = self.z2_post_encoder_layers(z2)
             u_pred = self.control_network(z1, z2)

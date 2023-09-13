@@ -31,9 +31,9 @@ class FloatZone(Environment):
         # CoilPosition    = 3
 
     class SLabels(enum.IntEnum):
-        PLCState        = 0
+        # PLCState        = 0
         # GrowthState     = 1
         # DropState       = 2
-        Machine         = 1
+        Machine         = 0
 
-    S_bin_count = (32, 12)
+    S_bin_count = (12, )

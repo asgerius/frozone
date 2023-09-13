@@ -4,13 +4,14 @@ from typing import Type
 
 import numpy as np
 import torch
+import torch.cuda.amp as amp
 import torch.optim.lr_scheduler as lr_scheduler
 from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
 from frozone import device
 from frozone.data import list_processed_data_files
-from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
+from frozone.data.dataloader import dataloader, dataset_size, include_vector, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
@@ -93,11 +94,15 @@ def train(job: JobDescription):
             )
 
     loss_fn = torch.nn.L1Loss(reduction="none")
-    loss_weight = 1 / 2 ** torch.arange(train_cfg.F).to(device)
+    loss_weight = torch.ones(train_cfg.H, device=device)
     loss_weight = loss_weight / loss_weight.sum()
+
+    x_include = include_vector(env, train_cfg)
+    x_include = torch.from_numpy(x_include).to(device) * len(x_include) / x_include.sum()
+
     def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
         loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-        return (loss.T @ loss_weight).mean()
+        return (loss.T @ loss_weight * x_include).mean()
     def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
         return loss_fn(u_target, u_pred).mean()
 
@@ -150,7 +155,7 @@ def train(job: JobDescription):
                     test_loss = np.empty(train_cfg.num_eval_batches)
                     for k in range(train_cfg.num_eval_batches):
                         Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
-                        with TT.profile("Forward"):
+                        with TT.profile("Forward"), amp.autocast():
                             _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Uf, Sf)
                         test_loss_x[k] = loss_fn_x(Xf, pred_x).item() if pred_x is not None else torch.tensor(0)
                         test_loss_u[k] = loss_fn_u(Uf[:, 0], pred_u).item() if pred_u is not None else torch.tensor(0)
@@ -209,11 +214,8 @@ def train(job: JobDescription):
 
             with TT.profile("Get data"):
                 Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
-            with TT.profile("Forward"):
+            with TT.profile("Forward"), amp.autocast():
                 _, pred_x, pred_u = model(Xh, Uh, Sh, Xf, Uf, Sf)
-                cuda_sync()
-
-            with TT.profile("Backward"):
                 loss_x = loss_fn_x(Xf, pred_x) if pred_x is not None else torch.tensor(0)
                 loss_u = loss_fn_u(Uf[:, 0], pred_u) if pred_u is not None else torch.tensor(0)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
@@ -221,6 +223,9 @@ def train(job: JobDescription):
                 train_results.train_loss_x[j].append(loss_x.item())
                 train_results.train_loss_u[j].append(loss_u.item())
                 train_results.train_loss[j].append(loss.item())
+                cuda_sync()
+
+            with TT.profile("Backward"):
                 loss.backward()
                 cuda_sync()
 
