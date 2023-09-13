@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pelutils.ds.plots as plots
-from pelutils import log, split_path, thousands_seperators
+from pelutils import log, split_path, thousands_seperators, LogLevels
 from pelutils.parser import Parser, Option
 from tqdm import tqdm
 
-from frozone.data import RAW_SUBDIR, PHASES, TRAIN_SUBDIR, list_processed_data_files
+from frozone.data import RAW_SUBDIR, PHASES, TEST_SUBDIR, TRAIN_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import load_data_files
 from frozone.environments import FloatZone
 
@@ -105,37 +105,41 @@ def analyse_processed_data(job):
     samples = 15
 
     log("Loading data")
-    test_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR, "Full_Diameter")
+    test_data_files = list_processed_data_files(job.location, TEST_SUBDIR, job.phase)
     random.shuffle(test_data_files)
     test_data_files = test_data_files[:samples]
     dataset = load_data_files(test_data_files, None)
 
-    log("Plotting X samples")
+    log("Plotting %i X samples" % len(dataset))
     for xlabel in FloatZone.XLabels:
-        with plots.Figure(os.path.join(job.location, _plot_folder, f"X_{xlabel.name}.png")):
+        with plots.Figure(os.path.join(job.location, _plot_folder + " " + job.phase, f"X_{xlabel.name}.png")):
             for X, U, S in dataset:
-                plt.plot(np.arange(len(X)) * 6, X[:, xlabel.value], "-o", color="grey", alpha=0.4, ms=4)
+                plt.plot(np.arange(len(X)) * 6, X[:, xlabel.value], alpha=0.7, lw=0.8)
             plt.title(xlabel.name)
             plt.xlabel("Time [s]")
             plt.grid()
 
-    log("Plotting U samples")
+    log("Plotting %i U samples" % len(dataset))
     for ulabel in FloatZone.ULabels:
-        with plots.Figure(os.path.join(job.location, _plot_folder, f"U_{ulabel.name}.png")):
+        with plots.Figure(os.path.join(job.location, _plot_folder + " " + job.phase, f"U_{ulabel.name}.png")):
             for X, U, S in dataset:
-                plt.plot(np.arange(len(U)) * 6, U[:, ulabel.value], color="grey", alpha=0.4, ms=4)
+                plt.plot(np.arange(len(U)) * 6, U[:, ulabel.value], alpha=0.7, lw=0.8)
             plt.title(ulabel.name)
             plt.xlabel("Time [s]")
             plt.grid()
 
 if __name__ == "__main__":
-    parser = Parser(Option("max-files", type=int, default=None))
+    parser = Parser(
+        Option("max-files", type=int, default=None),
+        Option("phase", default="Full_Diameter"),
+    )
     job = parser.parse_args()
 
-    log.configure(os.path.join(job.location, "analysis.log"), print_level=None)
+    log.configure(os.path.join(job.location, "analysis.log"))
 
     with log.log_errors:
         log.section("Analysing raw data")
-        analyse_raw_data(job)
+        with log.level(100):
+            analyse_raw_data(job)
         log.section("Analysing processed data")
         analyse_processed_data(job)
