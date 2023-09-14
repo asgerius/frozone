@@ -10,7 +10,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 import frozone.environments as environments
 from frozone import device, amp_context
 from frozone.data import list_processed_data_files
-from frozone.data.dataloader import dataloader, dataset_size, include_vector, load_data_files, standardize
+from frozone.data.dataloader import dataloader, dataset_size, history_only_vector, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
@@ -125,12 +125,12 @@ def train(job: JobDescription):
     loss_weight = torch.ones(train_cfg.F, device=device)
     loss_weight = loss_weight / loss_weight.sum()
 
-    x_include = include_vector(env, train_cfg)
-    x_include = torch.from_numpy(x_include).to(device) * len(x_include) / x_include.sum()
+    future_include_weights = history_only_vector(env, train_cfg)
+    future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
 
     def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
         loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-        return (loss.T @ loss_weight * x_include).mean()
+        return (loss.T @ loss_weight * future_include_weights).mean()
     def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
         return loss_fn(u_target, u_pred).mean()
 

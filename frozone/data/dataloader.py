@@ -98,21 +98,17 @@ def standardize(
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device).float() for x in args]
 
-def include_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.ndarray:
+def history_only_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.ndarray:
 
     if env is FloatZone:
-        xlabels = FloatZone.XLabels
-        x_exclude = {
-            "Cone": (xlabels.MeltNeck, )
-        }[train_cfg.phase]
+        history_only = (FloatZone.XLabels.PolyAngle, )
     else:
-        x_exclude = tuple()
-    # log("Excluding the the following process variables", [lab.name for lab in loss_x_exclude])
-    x_include = np.ones(len(env.XLabels), dtype=np.float32)
-    for xlab in x_exclude:
-        x_include[xlab.value] = 0
+        history_only = tuple()
+    x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
+    for xlab in history_only:
+        x_future_include[xlab.value] = 0
 
-    return x_include
+    return x_future_include
 
 def _start_dataloader_thread(
     env: Type[Environment],
@@ -121,7 +117,7 @@ def _start_dataloader_thread(
     buffer: Queue[DataSequence],
 ):
 
-    x_include = include_vector(env, train_cfg)
+    future_include_weights = history_only_vector(env, train_cfg)
 
     def task():
 
@@ -156,7 +152,7 @@ def _start_dataloader_thread(
                 Uf[i] = U[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
                 Sf[i] = S[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
 
-            buffer.put(numpy_to_torch_device(Xh * x_include, Uh, Sh, Xf * x_include, Uf, Sf))
+            buffer.put(numpy_to_torch_device(Xh, Uh, Sh, Xf * future_include_weights, Uf, Sf))
 
     thread = threading.Thread(target=task, daemon=True)
     thread.start()
