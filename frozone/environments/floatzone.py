@@ -15,12 +15,13 @@ class FloatZone(Environment):
         FullZone        = 4
         MeltVolume      = 5
         PolyAngle       = 6
-        CrysAngleLeft   = 7
-        CrysAngleRight  = 8
-        MeltNeck        = 9
-        GrowthLine      = 10
-        PosPoly         = 11
-        PosCrys         = 12
+        CrysAngle       = 7
+        # CrysAngleLeft   = 7
+        # CrysAngleRight  = 8
+        # MeltNeck        = 9
+        # GrowthLine      = 10
+        # PosPoly         = 11
+        # PosCrys         = 12
 
     class ULabels(enum.IntEnum):
         GenVoltage      = 0

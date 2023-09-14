@@ -127,18 +127,11 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> defaultdict[int, Datas
             X[:, FloatZone.XLabels.FullZone]   = df_used["FullZone[mm]"].values
             X[:, FloatZone.XLabels.MeltVolume] = df_used["MeltVolume[mm3]"].values
             X[:, FloatZone.XLabels.PolyAngle]  = df_used["PolyAngle[deg]"].values
-            if "CrysAngle_Left[deg]" in df_used.keys():
-                # New runs in which left and right angles have been collected separately
-                X[:, FloatZone.XLabels.CrysAngleLeft]  = df_used["CrysAngle_Left[deg]"].values
-                X[:, FloatZone.XLabels.CrysAngleRight] = df_used["CrysAngle_Right[deg]"].values
-            else:
-                # Old runs in which left and right angles where averaged
-                X[:, FloatZone.XLabels.CrysAngleLeft]  = df_used["CrysAngle[deg]"].values
-                X[:, FloatZone.XLabels.CrysAngleRight] = df_used["CrysAngle[deg]"].values
-            X[:, FloatZone.XLabels.MeltNeck]   = df_used["MeltNeck[mm]"].values
-            X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
-            X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
-            X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
+            X[:, FloatZone.XLabels.CrysAngle]  = df_used["CrysAngle[deg]"].values
+            # X[:, FloatZone.XLabels.MeltNeck]   = df_used["MeltNeck[mm]"].values
+            # X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
+            # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
+            # X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
 
             U[:, FloatZone.ULabels.GenVoltage]     = df_used["GenVoltage[kV]"].values
             U[:, FloatZone.ULabels.PolyPullRate]   = df_used["PolyPullRate[mm/min]"].values
