@@ -30,6 +30,7 @@ PHASES = {
     4096: "Closing",
     8192: "Cooling",
 }
+PHASE_ORDER = (1, 2, 4, 8, 16, 32, 64, 256, 512, 1024, 2048, 4096, 8192)
 
 def list_processed_data_files(data_path: str, train_test_subdir: str, phase: Optional[str]) -> list[str]:
     if phase is None:
