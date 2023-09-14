@@ -4,6 +4,7 @@ import abc
 import os
 from dataclasses import dataclass
 from pprint import pformat
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -29,8 +30,13 @@ class FzConfig(DataStorage):
     # 0 for both dynamics and control, 1 for dynamics only, and 2 for control only
     mode: int
 
+    # Fully-connected parameters
     fc_layer_num:  int
     fc_layer_size: int
+
+    # Transformer parameters
+    t_layer_num: int
+    t_nhead: int
 
     dropout: float
     activation_fn: str = "ReLU"
@@ -113,3 +119,46 @@ class _FloatzoneModule(nn.Module, abc.ABC):
                 )
 
         return modules
+
+    def build_positional_encoding(self, seq_length: int) -> torch.FloatTensor:
+        PE = torch.empty(seq_length, self.config.dz)
+        pos = torch.arange(seq_length)
+        index_sin = 2 * torch.arange(self.config.dz // 2 + self.config.dz % 2)
+        index_cos = 1 + 2 * torch.arange(self.config.dz // 2)
+        PE[:, index_sin] = torch.sin(torch.outer(pos, 1 / 10000 ** (index_sin / self.config.dz)))
+        PE[:, index_cos] = torch.cos(torch.outer(pos, 1 / 10000 ** ((index_cos - 1) / self.config.dz)))
+
+        return nn.Parameter(PE, requires_grad=False)
+
+class BaseTransformer(_FloatzoneModule):
+
+    def __init__(self, config: FzConfig, input_d: int, positional_encoding: Optional[nn.Parameter] = None):
+        super().__init__(config)
+
+        assert config.dz % config.t_nhead == 0, "dz must be divisble by the number of attention heads, t_nhead"
+
+        self.embedding = nn.Linear(input_d, config.dz)
+
+        self.positional_encoding = positional_encoding
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model = config.dz,
+            nhead = config.t_nhead,
+            dropout = config.dropout,
+            activation = config.activation_fn.lower(),
+            batch_first = True,
+        )
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer = encoder_layer,
+            num_layers = config.t_layer_num,
+        )
+
+    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
+        assert len(x.shape) == 3  # Batch, sequence, feature
+
+        embedding = self.embedding(x)
+
+        if self.positional_encoding is not None:
+            embedding += self.positional_encoding
+
+        return self.encoder(embedding)

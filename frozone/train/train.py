@@ -4,12 +4,11 @@ from typing import Type
 
 import numpy as np
 import torch
-import torch.cuda.amp as amp
 import torch.optim.lr_scheduler as lr_scheduler
 from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
-from frozone import device
+from frozone import device, amp_context
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, include_vector, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
@@ -57,55 +56,6 @@ def train(job: JobDescription):
     env: Type[environments.Environment] = getattr(environments, train_cfg.env)
     log("Got environment %s" % env.__name__)
 
-    log("Building %i models" % train_cfg.num_models)
-    models: list[FzNetwork] = list()
-    optimizers: list[torch.optim.Optimizer] = list()
-    schedulers: list[lr_scheduler.LRScheduler] = list()
-    for i in range(train_cfg.num_models):
-        model = FzNetwork(FzConfig(
-            dx = len(env.XLabels),
-            du = len(env.ULabels),
-            dz = job.dz,
-            ds = sum(env.S_bin_count),
-            H = train_cfg.H,
-            F = train_cfg.F,
-            encoder_name = job.encoder_name,
-            decoder_name = job.decoder_name,
-            mode = 0 if 0 < train_cfg.alpha < 1 else 1 if train_cfg.alpha == 0 else 2,
-            fc_layer_num = job.fc_layer_num,
-            fc_layer_size = job.fc_layer_size,
-            dropout = job.dropout,
-            activation_fn = job.activation_fn,
-        )).to(device)
-        models.append(model)
-        optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, foreach=True))
-        schedulers.append(build_lr_scheduler(train_cfg, optimizers[-1]))
-        if i == 0:
-            log("Got model configuration", model.config)
-            log.debug("Built model", model)
-            log(
-                "Number of model parameters",
-                "History encoder:  %s" % thousands_seperators(model.Eh.numel()),
-                "Future encoder X: %s" % thousands_seperators(model.Ex.numel() if model.config.has_control else 0),
-                "Future encoder U: %s" % thousands_seperators(model.Eu.numel() if model.config.has_dynamics else 0),
-                "Decoder X:        %s" % thousands_seperators(model.Dx.numel() if model.config.has_dynamics else 0),
-                "Decoder U:        %s" % thousands_seperators(model.Du.numel() if model.config.has_control else 0),
-                "Total:            %s" % thousands_seperators(model.numel()),
-            )
-
-    loss_fn = torch.nn.L1Loss(reduction="none")
-    loss_weight = torch.ones(train_cfg.H, device=device)
-    loss_weight = loss_weight / loss_weight.sum()
-
-    x_include = include_vector(env, train_cfg)
-    x_include = torch.from_numpy(x_include).to(device) * len(x_include) / x_include.sum()
-
-    def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
-        loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-        return (loss.T @ loss_weight * x_include).mean()
-    def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
-        return loss_fn(u_target, u_pred).mean()
-
     train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, train_cfg.phase)
     test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
     log(
@@ -132,6 +82,57 @@ def train(job: JobDescription):
     train_dataloader = dataloader(env, train_cfg, train_dataset)
     test_dataloader = dataloader(env, train_cfg, test_dataset)
 
+    log("Building %i models" % train_cfg.num_models)
+    models: list[FzNetwork] = list()
+    optimizers: list[torch.optim.Optimizer] = list()
+    schedulers: list[lr_scheduler.LRScheduler] = list()
+    for i in range(train_cfg.num_models):
+        model = FzNetwork(FzConfig(
+            dx = len(env.XLabels),
+            du = len(env.ULabels),
+            dz = job.dz,
+            ds = sum(env.S_bin_count),
+            H = train_cfg.H,
+            F = train_cfg.F,
+            encoder_name = job.encoder_name,
+            decoder_name = job.decoder_name,
+            mode = 0 if 0 < train_cfg.alpha < 1 else 1 if train_cfg.alpha == 0 else 2,
+            fc_layer_num = job.fc_layer_num,
+            fc_layer_size = job.fc_layer_size,
+            t_layer_num = job.t_layer_num,
+            t_nhead = job.t_nhead,
+            dropout = job.dropout,
+            activation_fn = job.activation_fn,
+        )).to(device)
+        models.append(model)
+        optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, foreach=True))
+        schedulers.append(build_lr_scheduler(train_cfg, optimizers[-1]))
+        if i == 0:
+            log("Got model configuration", model.config)
+            log.debug("Built model", model)
+            log(
+                "Number of model parameters",
+                "History encoder:  %s" % thousands_seperators(model.Eh.numel()),
+                "Future encoder X: %s" % thousands_seperators(model.Ex.numel() if model.config.has_control else 0),
+                "Future encoder U: %s" % thousands_seperators(model.Eu.numel() if model.config.has_dynamics else 0),
+                "Decoder X:        %s" % thousands_seperators(model.Dx.numel() if model.config.has_dynamics else 0),
+                "Decoder U:        %s" % thousands_seperators(model.Du.numel() if model.config.has_control else 0),
+                "Total:            %s" % thousands_seperators(model.numel()),
+            )
+
+    loss_fn = torch.nn.L1Loss(reduction="none")
+    loss_weight = torch.ones(train_cfg.F, device=device)
+    loss_weight = loss_weight / loss_weight.sum()
+
+    x_include = include_vector(env, train_cfg)
+    x_include = torch.from_numpy(x_include).to(device) * len(x_include) / x_include.sum()
+
+    def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
+        loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
+        return (loss.T @ loss_weight * x_include).mean()
+    def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
+        return loss_fn(u_target, u_pred).mean()
+
     rare_checkpoint_counter = 1
     @torch.inference_mode()
     def checkpoint(batch_no: int):
@@ -155,7 +156,7 @@ def train(job: JobDescription):
                     test_loss = np.empty(train_cfg.num_eval_batches)
                     for k in range(train_cfg.num_eval_batches):
                         Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
-                        with TT.profile("Forward"), amp.autocast():
+                        with TT.profile("Forward"), amp_context():
                             _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                         test_loss_x[k] = loss_fn_x(Xf, Xf_pred).item() if Xf_pred is not None else torch.tensor(0)
                         test_loss_u[k] = loss_fn_u(Uf, Uf_pred).item() if Uf_pred is not None else torch.tensor(0)
@@ -214,7 +215,7 @@ def train(job: JobDescription):
 
             with TT.profile("Get data"):
                 Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
-            with TT.profile("Forward"), amp.autocast():
+            with TT.profile("Forward"), amp_context():
                 _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                 loss_x = loss_fn_x(Xf, Xf_pred) if Xf_pred is not None else torch.tensor(0)
                 loss_u = loss_fn_u(Uf, Uf_pred) if Uf_pred is not None else torch.tensor(0)

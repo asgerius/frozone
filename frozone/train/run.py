@@ -28,11 +28,13 @@ options = (
     Option("epsilon", type=float, default=0),
 
     # Model parameters
-    Option("dz", type=int, default=300),
+    Option("dz", type=int, default=256),
     Option("encoder-name", default="FullyConnected"),
     Option("decoder-name", default="FullyConnected"),
     Option("fc-layer-num", type=int, default=3),
-    Option("fc-layer-size", type=int, default=400),
+    Option("fc-layer-size", type=int, default=256),
+    Option("t-layer-num", type=int, default=3),
+    Option("t-nhead", type=int, default=6),
     Option("dropout", type=float, default=0),
     Option("activation-fn", default="ReLU"),
 )
