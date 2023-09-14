@@ -35,6 +35,7 @@ options = (
     Option("fc-layer-size", type=int, default=256),
     Option("t-layer-num", type=int, default=3),
     Option("t-nhead", type=int, default=6),
+    Option("t-d-feedforward", type=int, default=1024),
     Option("dropout", type=float, default=0),
     Option("activation-fn", default="ReLU"),
 )

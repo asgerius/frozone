@@ -37,6 +37,7 @@ class FzConfig(DataStorage):
     # Transformer parameters
     t_layer_num: int
     t_nhead: int
+    t_d_feedforward: int
 
     dropout: float
     activation_fn: str = "ReLU"
@@ -144,6 +145,7 @@ class BaseTransformer(_FloatzoneModule):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model = config.dz,
             nhead = config.t_nhead,
+            dim_feedforward = config.t_d_feedforward,
             dropout = config.dropout,
             activation = config.activation_fn.lower(),
             batch_first = True,

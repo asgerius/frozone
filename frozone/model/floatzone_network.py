@@ -56,10 +56,10 @@ class FzNetwork(_FloatzoneModule):
 
         if self.config.has_dynamics and Uf is not None:
             Zu = self.Eu(Sf, Xf_or_Uf=Uf)
-            Xf_pred = self.Dx(zh, Zu)
+            Xf_pred = self.Dx(zh, Zu) + Xh[:, -1].unsqueeze(dim=1)
 
         if self.config.has_control and Xf is not None:
             Zx = self.Ex(Sf, Xf_or_Uf=Xf)
-            Uf_pred = self.Du(zh, Zx)
+            Uf_pred = self.Du(zh, Zx) + Uh[:, -1].unsqueeze(dim=1)
 
         return (zh, Zu, Zx), Xf_pred, Uf_pred

@@ -101,6 +101,7 @@ def train(job: JobDescription):
             fc_layer_size = job.fc_layer_size,
             t_layer_num = job.t_layer_num,
             t_nhead = job.t_nhead,
+            t_d_feedforward = job.t_d_feedforward,
             dropout = job.dropout,
             activation_fn = job.activation_fn,
         )).to(device)
