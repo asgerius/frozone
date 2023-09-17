@@ -53,7 +53,7 @@ def forward(
         log.debug("Step %i / %i" % (i, predict_steps))
         for j, model in enumerate(models):
             X_pred[:, train_cfg.H + i, j] = model(
-                X_pred[:, i : i + train_cfg.H, :].mean(dim=-1),
+                X_pred[:, i : i + train_cfg.H].mean(dim=2),
                 U_true[:, i : i + train_cfg.H],
                 S_true[:, i : i + train_cfg.H],
                 S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
@@ -107,6 +107,6 @@ if __name__ == "__main__":
 
         log.section("Running forward evaluation")
         with TT.profile("Forward evaluation"):
-            forward(job.location, env, models, test_dataset, train_cfg, train_results, ForwardConfig(num_samples=3, prediction_window=150))
+            forward(job.location, env, models, test_dataset, train_cfg, train_results, ForwardConfig(num_samples=5, prediction_window=150))
 
         log(TT)
