@@ -32,7 +32,7 @@ class FullyConnected(Decoder):
     def __init__(self, config: FzConfig, *, is_x: bool):
         super().__init__(config, is_x=is_x)
 
-        in_size = (1 + config.H) * self.config.dz
+        in_size = (1 + config.F) * self.config.dz
         out_size = config.F * self.out_d
 
         self.layers = nn.Sequential(*self.build_fully_connected(in_size, out_size))
