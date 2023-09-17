@@ -20,11 +20,11 @@ class Environment(abc.ABC):
     class ULabels(enum.IntEnum):
         """ Variables that are set by the controller, generally referred to as u in literature. """
 
-    class ZLabels(enum.IntEnum):
-        """ Variables hidden from the controller. """
-
     class SLabels(enum.IntEnum):
         """ Categorical and/or discrete properties. These can change over time, but do so independently of control. """
+
+    class ZLabels(enum.IntEnum):
+        """ Variables hidden from the controller. """
 
     # The number of 0 or 1 needed to represent each value in SLabels
     S_bin_count: tuple[int] = tuple()
@@ -82,23 +82,23 @@ class Environment(abc.ABC):
             else:
                 U[:, i] = cls.sample_new_control_vars(X[:, i], U[:, i - 1], dt = dt)
 
-            X[:, i + 1], Z[:, i + 1], S[:, i + 1] = cls.forward(
+            X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],
-                Z[:, i], S[:, i],
+                S[:, i], Z[:, i],
                 dt = dt,
             )
 
         U[:, -1] = cls.sample_new_control_vars(X[:, -1], U[:, -2], dt = dt)
 
-        return X, Z, U, S
+        return X, U, S, Z
 
     @abc.abstractclassmethod
-    def forward(cls, X: np.ndarray, U: np.ndarray, Z: np.ndarray, S: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Does a single forward pass. All input matrices should have shape n x D, where n is the number of concurrent simulations
         and D is the dimensionality of that particular variable. """
 
     @classmethod
-    def forward_multiple(cls, X: np.ndarray, U: np.ndarray, Z: np.ndarray, S: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward_multiple(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Same as forward, but does multiple forward iterations. X, Z, and U have the same shape as in forward, but U has shape
         n x iterations x d. """
         if not cls.is_simulation:
@@ -119,9 +119,9 @@ class Environment(abc.ABC):
         S[:, 0] = tmp
 
         for i in range(iters):
-            X[:, i + 1], Z[:, i + 1], S[:, i + 1] = cls.forward(X[:, i], U[:, i], Z[:, i], S[:, i], dt)
+            X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(X[:, i], U[:, i], S[:, i], Z[:, i], dt)
 
-        return X, Z, S
+        return X, S, Z
 
 from .ball import Ball
 from .floatzone import FloatZone

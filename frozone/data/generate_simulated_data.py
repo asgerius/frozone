@@ -11,7 +11,7 @@ from frozone.environments import Ball, Environment
 
 
 def generate(path: str, env: Type[Environment], num_simulations: int, iters: int):
-    X, _, U, S = env.simulate(num_simulations, iters, 0.1)
+    X, U, S, Z = env.simulate(num_simulations, iters, 0.1)
 
     shutil.rmtree(os.path.join(path, PROCESSED_SUBDIR), ignore_errors=True)
 

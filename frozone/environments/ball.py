@@ -20,14 +20,14 @@ class Ball(Environment):
         F1 = 1
         F2 = 2
 
-    class ZLabels(enum.IntEnum):
-        VX = 0
-        VY = 1
-
     class SLabels(enum.IntEnum):
         F0_DECREASE = 0
         F1_DECREASE = 1
         F2_DECREASE = 2
+
+    class ZLabels(enum.IntEnum):
+        VX = 0
+        VY = 1
 
     S_bin_count = (1, 1, 1)
 
@@ -61,7 +61,7 @@ class Ball(Environment):
         return static_states
 
     @classmethod
-    def forward(self, X: np.ndarray, U: np.ndarray, Z: np.ndarray, S: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward(self, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         mass = 2
         k_drag = 5
 
@@ -104,4 +104,4 @@ class Ball(Environment):
         new_vx = vx + dt * Fx / mass
         new_vy = vy + dt * Fy / mass
 
-        return np.vstack((new_x, new_y)).T, np.vstack((new_vx, new_vy)).T, S
+        return np.vstack((new_x, new_y)).T, S, np.vstack((new_vx, new_vy)).T
