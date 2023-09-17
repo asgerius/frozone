@@ -13,7 +13,7 @@ import torch
 import frozone.train
 from frozone import device
 from frozone.data import DataSequence, Dataset
-from frozone.environments import Environment, FloatZone
+from frozone.environments import Environment, FloatZone, Steuermann
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -102,11 +102,13 @@ def history_only_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.nd
 
     if env is FloatZone:
         history_only = (FloatZone.XLabels.PolyAngle, )
+    elif env is Steuermann:
+        history_only = (Steuermann.XLabels.PolyAngle, )
     else:
         history_only = tuple()
     x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
     for xlab in history_only:
-        x_future_include[xlab.value] = 0
+        x_future_include[xlab] = 0
 
     return x_future_include
 

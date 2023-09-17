@@ -30,8 +30,8 @@ def plot_forward(
 ):
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
-    timestamps_true = np.arange(X_true.shape[1]) * train_cfg.dt
-    timestamps_pred = np.arange(X_pred.shape[1])[train_cfg.H - 1:] * train_cfg.dt
+    timestamps_true = np.arange(X_true.shape[1]) * env.dt
+    timestamps_pred = np.arange(X_pred.shape[1])[train_cfg.H - 1:] * env.dt
     for i in range(forward_cfg.num_samples):
         for j in range(len(env.XLabels)):
             with plots.Figure(os.path.join(path, _plot_folder, "sample_%i" % i, env.XLabels(j).name + ".png")):

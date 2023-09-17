@@ -37,7 +37,6 @@ def train(job: JobDescription):
         env = job.env,
         data_path = job.data_path,
         phase = job.phase,
-        dt = job.dt,
         history_window = job.history_window,
         prediction_window = job.prediction_window,
         batches = job.batches,

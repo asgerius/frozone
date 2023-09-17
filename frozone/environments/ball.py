@@ -9,6 +9,7 @@ from frozone.environments import Environment
 
 class Ball(Environment):
 
+    dt = 1 / 10
     is_simulation = True
 
     class XLabels(enum.IntEnum):
@@ -43,12 +44,12 @@ class Ball(Environment):
         return np.zeros((n, len(cls.ULabels)), dtype=cls.U_dtype)
 
     @classmethod
-    def sample_new_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray, dt: float) -> np.ndarray:
+    def sample_new_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray) -> np.ndarray:
         reg = 10
-        f0 = np.random.normal(prev_control_states[:, 0], dt / reg)
-        f1 = np.random.normal(prev_control_states[:, 1], dt / reg)
-        f2 = np.random.normal(prev_control_states[:, 2], dt / reg)
-        return 1 / (1 + dt / reg) * np.maximum(np.vstack((f0, f1, f2)).T, 0)
+        f0 = np.random.normal(prev_control_states[:, 0], cls.dt / reg)
+        f1 = np.random.normal(prev_control_states[:, 1], cls.dt / reg)
+        f2 = np.random.normal(prev_control_states[:, 2], cls.dt / reg)
+        return 1 / (1 + cls.dt / reg) * np.maximum(np.vstack((f0, f1, f2)).T, 0)
 
     @classmethod
     def sample_init_hidden_vars(cls, n: int) -> np.ndarray:
@@ -61,7 +62,7 @@ class Ball(Environment):
         return static_states
 
     @classmethod
-    def forward(self, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         mass = 2
         k_drag = 5
 
@@ -99,9 +100,9 @@ class Ball(Environment):
         Fx = 0.5 * Fx_grav + Fx_thrust + Fx_drag
         Fy = 0.5 * Fy_grav + Fy_thrust + Fy_drag
 
-        new_x = x + dt * vx
-        new_y = y + dt * vy
-        new_vx = vx + dt * Fx / mass
-        new_vy = vy + dt * Fy / mass
+        new_x = x + cls.dt * vx
+        new_y = y + cls.dt * vy
+        new_vx = vx + cls.dt * Fx / mass
+        new_vy = vy + cls.dt * Fy / mass
 
         return np.vstack((new_x, new_y)).T, S, np.vstack((new_vx, new_vy)).T

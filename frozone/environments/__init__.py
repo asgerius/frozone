@@ -4,6 +4,7 @@ import abc
 import enum
 
 import numpy as np
+from tqdm import tqdm
 
 
 class Environment(abc.ABC):
@@ -12,6 +13,7 @@ class Environment(abc.ABC):
     U_dtype = np.float32
     S_dtype = np.uint8
 
+    dt: float
     is_simulation: bool
 
     class XLabels(enum.IntEnum):
@@ -44,7 +46,7 @@ class Environment(abc.ABC):
         pass
 
     @abc.abstractclassmethod
-    def sample_new_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray, dt: float) -> np.ndarray:
+    def sample_new_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray) -> np.ndarray:
         """ Sample new control variables for next time step. """
 
     @abc.abstractclassmethod
@@ -57,7 +59,7 @@ class Environment(abc.ABC):
         return static_states
 
     @classmethod
-    def simulate(cls, n: int, iters: int, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, iters: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
@@ -72,35 +74,33 @@ class Environment(abc.ABC):
         S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
         S[:, 0] = cls.sample_init_static_vars(n)
 
-        for i in range(iters):
+        for i in tqdm(range(iters)):
             if i == 0:
                 U[:, i] = cls.sample_new_control_vars(
                     X[:, i],
                     cls.sample_init_control_vars(n),
-                    dt = dt,
                 )
             else:
-                U[:, i] = cls.sample_new_control_vars(X[:, i], U[:, i - 1], dt = dt)
+                U[:, i] = cls.sample_new_control_vars(X[:, i], U[:, i - 1])
 
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],
                 S[:, i], Z[:, i],
-                dt = dt,
             )
 
-        U[:, -1] = cls.sample_new_control_vars(X[:, -1], U[:, -2], dt = dt)
+        U[:, -1] = cls.sample_new_control_vars(X[:, -1], U[:, -2])
 
         return X, U, S, Z
 
     @abc.abstractclassmethod
-    def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Does a single forward pass. All input matrices should have shape n x D, where n is the number of concurrent simulations
-        and D is the dimensionality of that particular variable. """
+        and D is the dimensionality of that particular variable. Return X, S, Z. """
 
     @classmethod
-    def forward_multiple(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward_multiple(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Same as forward, but does multiple forward iterations. X, Z, and U have the same shape as in forward, but U has shape
-        n x iterations x d. """
+        n x iterations x d. Returns X, S, Z. """
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
@@ -119,7 +119,7 @@ class Environment(abc.ABC):
         S[:, 0] = tmp
 
         for i in range(iters):
-            X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(X[:, i], U[:, i], S[:, i], Z[:, i], dt)
+            X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(X[:, i], U[:, i], S[:, i], Z[:, i])
 
         return X, S, Z
 

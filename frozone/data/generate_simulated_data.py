@@ -1,17 +1,20 @@
 import os
 import random
 import shutil
+import warnings
 from typing import Type
 
 import numpy as np
 from tqdm import tqdm
 
 from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT
-from frozone.environments import Ball, Environment
+from frozone.environments import Ball, Environment, Steuermann
 
+
+warnings.filterwarnings("error")
 
 def generate(path: str, env: Type[Environment], num_simulations: int, iters: int):
-    X, U, S, Z = env.simulate(num_simulations, iters, 0.1)
+    X, U, S, Z = env.simulate(num_simulations, iters)
 
     shutil.rmtree(os.path.join(path, PROCESSED_SUBDIR), ignore_errors=True)
 
@@ -27,4 +30,4 @@ def generate(path: str, env: Type[Environment], num_simulations: int, iters: int
         np.savez_compressed(outpath, X=X[i], U=U[i], S=S[i])
 
 if __name__ == "__main__":
-    generate("data-ball", Ball, 20000, 5000)
+    generate("data-steuermann", Steuermann, 100, int(2 * 3600 / Steuermann.dt))

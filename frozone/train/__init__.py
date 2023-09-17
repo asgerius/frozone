@@ -3,10 +3,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pprint import pformat
-from typing import Optional
+from typing import Optional, Type
 
 import numpy as np
 from pelutils import DataStorage
+
+import frozone.environments as environments
 
 
 # This global variable is used to indicate to threads whether or not a training is running.
@@ -22,7 +24,6 @@ class TrainConfig(DataStorage):
     phase:              Optional[str]
 
     # Windows are given in seconds
-    dt:                 float
     history_window:     float
     prediction_window:  float
 
@@ -45,15 +46,18 @@ class TrainConfig(DataStorage):
 
     @property
     def H(self) -> int:
-        return int(self.history_window / self.dt)
+        return int(self.history_window / self.get_env().dt)
 
     @property
     def F(self) -> int:
-        return int(self.prediction_window / self.dt)
+        return int(self.prediction_window / self.get_env().dt)
 
     @property
     def num_eval_batches(self) -> int:
         return math.ceil(self.eval_size / self.batch_size)
+
+    def get_env(self) -> Type[environments.Environment]:
+        return getattr(environments, self.env)
 
     def __str__(self) -> str:
         return pformat(vars(self))

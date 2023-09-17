@@ -3,18 +3,19 @@ import os
 import random
 from collections import defaultdict, Counter
 from glob import glob as glob  # glob
+from typing import Type
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pelutils.ds.plots as plots
-from pelutils import log, split_path, thousands_seperators, LogLevels
-from pelutils.parser import Parser, Option
+from pelutils import log, split_path, thousands_seperators
+from pelutils.parser import Parser, Option, JobDescription
 from tqdm import tqdm
 
+import frozone.environments as environments
 from frozone.data import RAW_SUBDIR, PHASES, TEST_SUBDIR, TRAIN_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import load_data_files
-from frozone.environments import FloatZone
 
 
 _plot_folder = "analysis-plots"
@@ -62,7 +63,7 @@ def plot_phase_distribution(path: str, num_lines_by_phase: defaultdict[int, list
         plt.legend(loc=3)
         plt.grid()
 
-def analyse_raw_data(job):
+def analyse_raw_data(job: JobDescription, env: Type[environments.Environment]):
 
     raw_files = glob(os.path.join(job.location, RAW_SUBDIR, "**", "*.txt"), recursive=True)
     random.shuffle(raw_files)
@@ -101,45 +102,47 @@ def analyse_raw_data(job):
     plot_line_distributions(job.location, num_lines, num_lines_by_machine)
     plot_phase_distribution(job.location, num_lines_by_phase)
 
-def analyse_processed_data(job):
+def analyse_processed_data(job: JobDescription, env: Type[environments.Environment]):
     samples = 15
 
     log("Loading data")
-    test_data_files = list_processed_data_files(job.location, TEST_SUBDIR, job.phase)
+    test_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR, job.phase)
     random.shuffle(test_data_files)
     test_data_files = test_data_files[:samples]
     dataset = load_data_files(test_data_files, None)
 
     log("Plotting %i X samples" % len(dataset))
-    for xlabel in FloatZone.XLabels:
-        with plots.Figure(os.path.join(job.location, _plot_folder + " " + job.phase, f"X_{xlabel.name}.png")):
+    for xlabel in env.XLabels:
+        with plots.Figure(os.path.join(job.location, _plot_folder + " PHASE=" + job.phase, f"X_{xlabel.name}.png")):
             for X, U, S in dataset:
-                plt.plot(np.arange(len(X)) * 6, X[:, xlabel.value], alpha=0.7, lw=0.8)
-            plt.title(xlabel.name)
+                plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], alpha=0.7, lw=0.8)
+            plt.title("X " + xlabel.name)
             plt.xlabel("Time [s]")
             plt.grid()
 
     log("Plotting %i U samples" % len(dataset))
-    for ulabel in FloatZone.ULabels:
-        with plots.Figure(os.path.join(job.location, _plot_folder + " " + job.phase, f"U_{ulabel.name}.png")):
+    for ulabel in env.ULabels:
+        with plots.Figure(os.path.join(job.location, _plot_folder + " PHASE=" + job.phase, f"U_{ulabel.name}.png")):
             for X, U, S in dataset:
-                plt.plot(np.arange(len(U)) * 6, U[:, ulabel.value], alpha=0.7, lw=0.8)
-            plt.title(ulabel.name)
+                plt.plot(np.arange(len(U)) * env.dt, U[:, ulabel], alpha=0.7, lw=0.8)
+            plt.title("U " + ulabel.name)
             plt.xlabel("Time [s]")
             plt.grid()
 
 if __name__ == "__main__":
     parser = Parser(
         Option("max-files", type=int, default=None),
-        Option("phase", default="Full_Diameter"),
+        Option("phase", default=""),
+        Option("env", default="FloatZone")
     )
     job = parser.parse_args()
+    env = getattr(environments, job.env)
 
     log.configure(os.path.join(job.location, "analysis.log"))
 
     with log.log_errors:
         log.section("Analysing raw data")
         with log.level(100):
-            analyse_raw_data(job)
+            analyse_raw_data(job, env)
         log.section("Analysing processed data")
-        analyse_processed_data(job)
+        analyse_processed_data(job, env)

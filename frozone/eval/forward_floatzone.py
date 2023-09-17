@@ -25,7 +25,7 @@ def forward(
     train_results: TrainResults,
     forward_cfg: ForwardConfig,
 ):
-    predict_steps = int(forward_cfg.prediction_window // train_cfg.dt)
+    predict_steps = int(forward_cfg.prediction_window // env.dt)
     timesteps = train_cfg.H + train_cfg.F + predict_steps - 1
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
     dataset = [(X, U, S) for X, U, S in dataset if len(X) >= timesteps]
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
 
-        env = getattr(environments, train_cfg.env)
+        env = train_cfg.get_env()
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
