@@ -106,7 +106,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
     samples = 15
 
     log("Loading data")
-    test_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR, job.phase)
+    test_data_files = list_processed_data_files(job.location, TEST_SUBDIR, job.phase)
     random.shuffle(test_data_files)
     test_data_files = test_data_files[:samples]
     dataset = load_data_files(test_data_files, None)
