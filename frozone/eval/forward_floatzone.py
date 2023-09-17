@@ -53,7 +53,7 @@ def forward(
         log.debug("Step %i / %i" % (i, predict_steps))
         for j, model in enumerate(models):
             X_pred[:, train_cfg.H + i, j] = model(
-                X_pred[:, i : i + train_cfg.H, j],
+                X_pred[:, i : i + train_cfg.H, :].mean(dim=-1),
                 U_true[:, i : i + train_cfg.H],
                 S_true[:, i : i + train_cfg.H],
                 S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
