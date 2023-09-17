@@ -30,4 +30,4 @@ def generate(path: str, env: Type[Environment], num_simulations: int, iters: int
         np.savez_compressed(outpath, X=X[i], U=U[i], S=S[i])
 
 if __name__ == "__main__":
-    generate("data-steuermann", Steuermann, 100, int(2 * 3600 / Steuermann.dt))
+    generate("data-steuermann", Steuermann, 100, int(3600 / Steuermann.dt))
