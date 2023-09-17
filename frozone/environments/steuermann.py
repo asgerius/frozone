@@ -75,7 +75,7 @@ class Steuermann(Environment):
 
         S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        response_iters = np.random.randint(iters // 4, iters // 2, n)
+        response_iters = np.random.randint(iters // 6, iters // 4, n)
         response_var = random.choice(list(cls.ULabels))
         response = np.random.uniform(0.95, 1.05, n)
 
