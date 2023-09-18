@@ -5,6 +5,7 @@ from frozone.environments import Environment
 
 class FloatZone(Environment):
 
+    dt = 6
     is_simulation = False
 
     class XLabels(enum.IntEnum):
