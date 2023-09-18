@@ -242,3 +242,12 @@ def train(job: JobDescription):
         TT.end_profile()
 
     checkpoint(train_cfg.batches)
+
+    total_examples = train_cfg.num_models * train_cfg.batch_size * train_cfg.batches
+    batch_profile = next(p for p in TT.profiles if p.name == "Batch")
+    total_train_time = batch_profile.sum()
+    log(
+        "Total training time: %s s" % thousands_seperators(round(total_train_time)),
+        "Total examples seen: %i x %s" % (train_cfg.num_models, thousands_seperators(total_examples // train_cfg.num_models)),
+        "Average:             %s examples / s" % thousands_seperators(round(total_examples / total_train_time)),
+    )
