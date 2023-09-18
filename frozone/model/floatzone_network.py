@@ -21,13 +21,15 @@ class FzNetwork(_FloatzoneModule):
     def __init__(self, config: FzConfig):
         super().__init__(config)
 
-        self.Eh = getattr(encoders_h, self.config.encoder_name)(config)
+        # Question: Return last layer, or use linear decoder to go from H x dz to dz?
+        self.Eh = getattr(encoders_h, config.encoder_name)(config)
 
+        encoder_name = "Transformer" if config.encoder_name == "GatedTransformer" else config.encoder_name
         if config.has_dynamics:
-            self.Eu = getattr(encoders_f, self.config.encoder_name)(config, config.du)
+            self.Eu = getattr(encoders_f, encoder_name)(config, config.du)
             self.Dx = getattr(decoders, self.config.decoder_name)(config, is_x=True)
         if config.has_control:
-            self.Ex = getattr(encoders_f, self.config.encoder_name)(config, config.dx)
+            self.Ex = getattr(encoders_f, encoder_name)(config, config.dx)
             self.Du = getattr(decoders, self.config.decoder_name)(config, is_x=False)
 
     def __call__(
