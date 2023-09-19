@@ -46,6 +46,7 @@ class TrainConfig(DataStorage):
     # Standard deviation of the generated noise
     # This is given as a multiplier to the feature-wise standard deviation in the data
     epsilon:            float
+    augment_prob:       float
 
     @property
     def H(self) -> int:

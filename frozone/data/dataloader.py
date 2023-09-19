@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import random
+import signal
 import threading
 import time
 from copy import copy
@@ -9,10 +11,12 @@ from typing import Generator, Optional, Type
 
 import numpy as np
 import torch
+from pelutils import TickTock, log, LogLevels
 
 import frozone.train
 from frozone import device
 from frozone.data import DataSequence, Dataset
+from frozone.data.augment import augment as augment_data
 from frozone.environments import Environment, FloatZone, Steuermann
 from frozone.train import TrainConfig, TrainResults
 
@@ -96,7 +100,7 @@ def standardize(
         dataset[i] = tuple(data.astype(np.float16) for data in dataset[i])
 
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
-    return [torch.from_numpy(x).to(device).float() for x in args]
+    return [torch.from_numpy(x).to(device) for x in args]
 
 def history_only_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.ndarray:
 
@@ -116,12 +120,17 @@ def _start_dataloader_thread(
     env: Type[Environment],
     train_cfg: TrainConfig,
     dataset: Dataset,
-    buffer: Queue[DataSequence],
+    buffer: Queue[DataSequence], *,
+    train: bool,
 ):
+    tt = TickTock()
+    tt.tick()
+    log_time_every = 300
 
     future_include_weights = history_only_vector(env, train_cfg)
 
     def task():
+        nonlocal log_time_every
 
         # Probability to select a given set is proportional to the amount of data in it
         p = np.array([len(X) for X, U, S in dataset]) / dataset_size(dataset)
@@ -133,41 +142,68 @@ def _start_dataloader_thread(
                 time.sleep(0.001)
                 continue
 
+            tt.profile("Generate batch")
+
             # These should not be changed to torch, as the sampling is apparently much faster in numpy
-            Xh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.XLabels)), dtype=np.float16)
-            Uh = np.empty((train_cfg.batch_size, train_cfg.H, len(env.ULabels)), dtype=np.float16)
-            Sh = np.empty((train_cfg.batch_size, train_cfg.H, sum(env.S_bin_count)), dtype=np.float16)
-            Xf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.XLabels)), dtype=np.float16)
-            Uf = np.empty((train_cfg.batch_size, train_cfg.F, len(env.ULabels)), dtype=np.float16)
-            Sf = np.empty((train_cfg.batch_size, train_cfg.F, sum(env.S_bin_count)), dtype=np.float16)
+            X = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, len(env.XLabels)), dtype=np.float32)
+            U = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, len(env.ULabels)), dtype=np.float32)
+            S = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
 
             set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True)
 
             for i in range(train_cfg.batch_size):
-                X, U, S = dataset[set_index[i]]
-                start_iter = random.randint(0, len(X) - train_cfg.H - train_cfg.F - 1)
+                X_seq, U_seq, S_seq = dataset[set_index[i]]
+                start_iter = random.randint(0, len(X_seq) - train_cfg.H - train_cfg.F - 1)
 
-                Xh[i] = X[start_iter : start_iter + train_cfg.H]
-                Uh[i] = U[start_iter : start_iter + train_cfg.H]
-                Sh[i] = S[start_iter : start_iter + train_cfg.H]
-                Xf[i] = X[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
-                Uf[i] = U[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
-                Sf[i] = S[start_iter + train_cfg.H : start_iter + train_cfg.H + train_cfg.F]
+                with tt.profile("Get slices"):
+                    X[i] = X_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
+                    U[i] = U_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
+                    S[i] = S_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
 
-            buffer.put(numpy_to_torch_device(Xh, Uh, Sh, Xf * future_include_weights, Uf, Sf))
+                if train:
+                    with tt.profile("Augment"):
+                        augment_data(X[i], U[i], train_cfg, tt)
 
-    thread = threading.Thread(target=task, daemon=True)
+            with tt.profile("Split and exclude"):
+                Xh = X[:, :train_cfg.H]
+                Uh = U[:, :train_cfg.H]
+                Sh = S[:, :train_cfg.H]
+                Xf = X[:, train_cfg.H:] * future_include_weights
+                Uf = U[:, train_cfg.H:]
+                Sf = S[:, train_cfg.H:]
+            with tt.profile("To device"):
+                arrays_on_device = numpy_to_torch_device(Xh, Uh, Sh, Xf, Uf, Sf)
+            buffer.put(arrays_on_device)
+
+            tt.end_profile()
+
+            if tt.tock() > log_time_every and train:
+                log("Batch time distribution", tt)
+                log_time_every += 300
+                tt.tick()
+
+    def task_wrapper():
+        try:
+            task()
+        except Exception as e:
+            log.critical("Error occured in data loader thread")
+            log.log_with_stacktrace(e, LogLevels.CRITICAL)
+            frozone.train.is_doing_training = False
+            os.kill(os.getpid(), signal.SIGKILL)
+
+    thread = threading.Thread(target=task_wrapper, daemon=True)
     thread.start()
 
 def dataloader(
     env: Type[Environment],
     train_cfg: TrainConfig,
-    dataset: Dataset,
+    dataset: Dataset, *,
+    train = False,
 ) -> Generator[tuple[torch.FloatTensor], None, None]:
 
     buffer = Queue(maxsize = 2 * train_cfg.num_models)
 
-    _start_dataloader_thread(env, train_cfg, dataset, buffer)
+    _start_dataloader_thread(env, train_cfg, dataset, buffer, train=train)
 
     while True:
         yield buffer.get()

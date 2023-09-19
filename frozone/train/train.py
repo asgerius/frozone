@@ -5,7 +5,7 @@ from typing import Type
 import numpy as np
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
-from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
+from pelutils import TT, TickTock, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
 from frozone import device, amp_context
@@ -49,6 +49,7 @@ def train(job: JobDescription):
         huber_delta = job.huber_delta,
         alpha = job.alpha,
         epsilon = job.epsilon,
+        augment_prob = job.augment_prob,
     )
     train_results = TrainResults.empty(train_cfg.num_models)
 
@@ -80,7 +81,7 @@ def train(job: JobDescription):
     with TT.profile("Standardize"):
         standardize(env, train_dataset, train_results)
         standardize(env, test_dataset, train_results)
-    train_dataloader = dataloader(env, train_cfg, train_dataset)
+    train_dataloader = dataloader(env, train_cfg, train_dataset, train=True)
     test_dataloader = dataloader(env, train_cfg, test_dataset)
 
     log("Building %i models" % train_cfg.num_models)
@@ -190,7 +191,7 @@ def train(job: JobDescription):
                 log("Plotting training progress")
                 plot_loss(job.location, train_cfg, train_results)
                 plot_lr(job.location, train_cfg, train_results)
-            rare_checkpoint_counter = (rare_checkpoint_counter + 1) % 5
+            rare_checkpoint_counter = (rare_checkpoint_counter + 1) % 10
 
             # Save training progress
             train_cfg.save(job.location)
@@ -199,11 +200,11 @@ def train(job: JobDescription):
                 models[i].save(job.location, i)
 
         if is_rare_checkpoint:
-            log(TT)
+            log("Training time distribution", TT)
 
     log.section("Beginning training loop", "Training for %s batches" % thousands_seperators(train_cfg.batches))
     for i in range(train_cfg.batches):
-        is_checkpoint = i % 1000 == 0
+        is_checkpoint = i % 500 == 0
         do_log = i == 0 or i == train_cfg.batches - 1 or i % 100 == 0
 
         if is_checkpoint:

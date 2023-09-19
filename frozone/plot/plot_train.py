@@ -43,17 +43,23 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
             plt.plot(*plots.moving_avg(train_loss.mean(axis=0), neighbors=12), label="Train loss", color=plots.tab_colours[2], alpha=0.8)
 
         if plot_dynamics:
-            plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), "-o", color="black", lw=2.7, ms=8)
+            plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), color="black", lw=2.7)
+            plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), color=plots.tab_colours[0], lw=1.5)
+            for loss in test_loss_x:
+                plt.scatter(train_results.checkpoints, loss, color="black", s=64)
+                plt.scatter(train_results.checkpoints, loss, color=plots.tab_colours[0], s=36, label="Test loss $X$")
         if plot_control:
-            plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), "-o", color="black", lw=2.7, ms=8)
+            plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), color="black", lw=2.7)
+            plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), color=plots.tab_colours[0], lw=1.5)
+            for loss in test_loss_u:
+                plt.scatter(train_results.checkpoints, loss, color="black", s=64)
+                plt.scatter(train_results.checkpoints, loss, color=plots.tab_colours[1], s=36, label="Test loss $U$")
         if plot_both:
-            plt.plot(train_results.checkpoints, test_loss.mean(axis=0), "-o", color="black", lw=2.7, ms=8)
-        if plot_dynamics:
-            plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), "-o", label="Test loss $X$", color=plots.tab_colours[0], lw=1.5, ms=6)
-        if plot_control:
-            plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), "-o", label="Test loss $U$", color=plots.tab_colours[1], lw=1.5, ms=6)
-        if plot_both:
-            plt.plot(train_results.checkpoints, test_loss.mean(axis=0), "-o", label="Test loss", color=plots.tab_colours[2], lw=1.5, ms=6)
+            plt.plot(train_results.checkpoints, test_loss.mean(axis=0), color="black", lw=2.7)
+            plt.plot(train_results.checkpoints, test_loss.mean(axis=0), color=plots.tab_colours[2], lw=1.5)
+            for loss in test_loss:
+                plt.scatter(train_results.checkpoints, loss, color="black", s=64)
+                plt.scatter(train_results.checkpoints, loss, color=plots.tab_colours[2], s=36, label="Test loss")
 
         plt.title(train_cfg.env)
         plt.xlabel("Batch")
