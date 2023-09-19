@@ -23,6 +23,8 @@ options = (
     Option("num-models", type=int, default=1),
     Option("max-num-data-files", type=int, default=0),
     Option("eval-size", type=int, default=4000),
+    Option("loss-fn", default="l1", choices=["l1", "l2", "huber"]),
+    Option("huber-delta", type=float, default=0.02),
     Option("alpha", type=float, default=0.5),
     Option("epsilon", type=float, default=0),
 

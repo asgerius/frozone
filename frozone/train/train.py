@@ -45,6 +45,8 @@ def train(job: JobDescription):
         num_models = job.num_models,
         max_num_data_files = job.max_num_data_files,
         eval_size = job.eval_size,
+        loss_fn = job.loss_fn,
+        huber_delta = job.huber_delta,
         alpha = job.alpha,
         epsilon = job.epsilon,
     )
@@ -120,7 +122,13 @@ def train(job: JobDescription):
                 "Total:            %s" % thousands_seperators(model.numel()),
             )
 
-    loss_fn = torch.nn.L1Loss(reduction="none")
+    if train_cfg.loss_fn == "l1":
+        loss_fn = torch.nn.L1Loss(reduction="none")
+    elif train_cfg.loss_fn == "l2":
+        loss_fn = torch.nn.MSELoss(reduction="none")
+    elif train_cfg.loss_fn == "huber":
+        _loss_fn = torch.nn.HuberLoss(reduction="none", delta=0.05)
+        loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
     loss_weight = torch.ones(train_cfg.F, device=device)
     loss_weight = loss_weight / loss_weight.sum()
 

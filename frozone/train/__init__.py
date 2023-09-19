@@ -36,6 +36,9 @@ class TrainConfig(DataStorage):
     max_num_data_files: int
     eval_size:          int
 
+    # Loss stuff
+    loss_fn:            str
+    huber_delta:        float
     # Loss weight - 0 for only dynamics and 1 for only control
     alpha:              float
 
