@@ -4,6 +4,7 @@ import multiprocessing as mp
 import os
 import random
 import shutil
+import sys
 from collections import defaultdict
 from glob import glob as glob  # glob
 
@@ -117,10 +118,7 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> dict[int, Dataset]:
         df_used = df.iloc[slice]
         n = len(df_used)
 
-        try:
-            assert (df_used.Growth_State_Act.values == phase_number).all(), "Not all same phase in df slice"
-        except:
-            breakpoint()
+        assert (df_used.Growth_State_Act.values == phase_number).all(), "Not all same phase in df slice"
 
         X = np.empty((n, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
         U = np.empty((n, len(FloatZone.ULabels)), dtype=FloatZone.U_dtype)
@@ -158,7 +156,6 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> dict[int, Dataset]:
             # S[i, :PLC_count][plc_is_true] = 1
 
             # S[i, PLC_count+growth_state_index[df["Growth_State_Act"].values[i]]] = 1
-
             S[i, PLC_count + MACHINES.index(machine)] = 1
 
         assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
@@ -170,24 +167,26 @@ def parse_floatzone_df(df: pd.DataFrame, machine: str) -> dict[int, Dataset]:
 
     return data
 
-def process_floatzone_file(filepath: str) -> str | None:
+def process_floatzone_file(args: list[str]) -> str | None:
     with log.collect:
         try:
-            log("Loading %s" % filepath)
-            df = pd.read_csv(filepath, quoting=3, delim_whitespace=True)
-            path_components = split_path(filepath)
-            machine = path_components[2]
+            raw_data_path, filepath = args
+            full_path = os.path.join(raw_data_path, filepath)
+            file_path_components = split_path(filepath)
+            log("Loading %s" % full_path)
+            df = pd.read_csv(full_path, quoting=3, delim_whitespace=True)
+            machine = file_path_components[0]
             log("Parsing file")
             data = parse_floatzone_df(df, machine)
             for phase_number, data_sequence in data.items():
                 train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
                 outpath = os.path.join(
-                    path_components[0],
+                    os.path.join(raw_data_path, os.path.pardir),
                     PROCESSED_SUBDIR,
                     train_test_subdir,
                     PHASES[phase_number],
-                    *path_components[2:-1],
-                    os.path.splitext(path_components[-1])[0],
+                    *file_path_components[2:-1],
+                    os.path.splitext(file_path_components[-1])[0],
                 )
                 X, U, S = data_sequence
                 log("Saving file with sequence length %s" % thousands_seperators(len(X)))
@@ -201,11 +200,12 @@ def process_floatzone_data(data_path: str, processes=None, max_files=None) -> li
 
     shutil.rmtree(os.path.join(data_path, PROCESSED_SUBDIR), ignore_errors=True)
 
-    raw_files = glob(os.path.join(data_path, RAW_SUBDIR, "**", "*.txt"), recursive=True)
+    raw_data_path = os.path.join(data_path, RAW_SUBDIR)
+    raw_files = glob(os.path.join(raw_data_path, "**", "*.txt"), recursive=True)
     random.shuffle(raw_files)
     raw_files = raw_files[:max_files]
     n_raw_total = len(raw_files)
-    raw_files = [file for file in raw_files if os.path.join(*split_path(file)[2:]) not in BLACKLIST]
+    raw_files = [(raw_data_path, file[len(raw_data_path)+1:]) for file in raw_files if not any(file.endswith(x) for x in BLACKLIST)]
     if max_files is None:
         assert 0 < n_raw_total == len(raw_files) + len(BLACKLIST)
     else:
@@ -231,4 +231,8 @@ def process_floatzone_data(data_path: str, processes=None, max_files=None) -> li
         print("No errors occured")
 
 if __name__ == "__main__":
-    process_floatzone_data("data-floatzone", processes=None, max_files=None)
+    if len(sys.argv) == 1:
+        data_path = "data-floatzone"
+    else:
+        data_path = sys.argv[1]
+    process_floatzone_data(data_path, processes=None, max_files=None)
