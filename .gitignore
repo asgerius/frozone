@@ -9,6 +9,7 @@ local_*
 /configs
 /data*
 /out
+/jobs
 *.png
 *.pdf
 
