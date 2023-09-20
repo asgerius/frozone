@@ -168,7 +168,7 @@ def _start_dataloader_thread(
                 Xh = X[:, :train_cfg.H]
                 Uh = U[:, :train_cfg.H]
                 Sh = S[:, :train_cfg.H]
-                Xf = X[:, train_cfg.H:] * future_include_weights
+                Xf = X[:, train_cfg.H:]
                 Uf = U[:, train_cfg.H:]
                 Sf = S[:, train_cfg.H:]
             with tt.profile("To device"):
