@@ -1,5 +1,6 @@
 import gc
 import os
+import warnings
 
 import torch
 from pelutils import log
@@ -8,6 +9,8 @@ from pelutils.parser import Parser, Argument, Option
 import frozone.train
 from frozone.train.train import train
 
+
+warnings.filterwarnings("always")
 
 options = (
     Argument("env"),
@@ -26,8 +29,8 @@ options = (
     Option("loss-fn", default="l1", choices=["l1", "l2", "huber"]),
     Option("huber-delta", type=float, default=0.02),
     Option("alpha", type=float, default=0.5),
-    Option("epsilon", type=float, default=0.5),
-    Option("augment-prob", type=float, default=0.3),
+    Option("epsilon", type=float, default=0.0),
+    Option("augment-prob", type=float, default=0.0),
 
     # Model parameters
     Option("dz", type=int, default=256),

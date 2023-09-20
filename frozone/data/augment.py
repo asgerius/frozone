@@ -7,7 +7,7 @@ from frozone.train import TrainConfig
 
 
 def linear_regression(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
-    assert x.shape == y.shape
+    assert x.shape == y.shape, "Shape of x, %s, does not match shape of y, %s" % (x.shape, y.shape)
     Sx = x.sum()
     Sy = y.sum()
     Sxy = (x * y).sum()

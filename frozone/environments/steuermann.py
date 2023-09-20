@@ -95,7 +95,7 @@ class Steuermann(Environment):
     @classmethod
     def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         n = len(X)
-        assert n == len(U) == len(S) == len(Z)
+        assert n == len(U) == len(S) == len(Z), "Different lengths of input: X=%i, U=%i, S=%i, Z=%i" % (len(X), len(U), len(S), len(Z))
 
         Xnew = X.copy()
         Snew = S.copy()

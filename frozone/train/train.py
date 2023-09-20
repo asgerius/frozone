@@ -1,17 +1,16 @@
 import math
-import os
 from typing import Type
 
 import numpy as np
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
-from pelutils import TT, TickTock, JobDescription, log, thousands_seperators, HardwareInfo
+from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
 from frozone import device, amp_context
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, history_only_vector, load_data_files, standardize
-from frozone.data.process_raw_floatzone_data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR
+from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults
@@ -156,34 +155,61 @@ def train(job: JobDescription):
         with TT.profile("Checkpoint"):
 
             # Evaluate
-            for j, model in enumerate(models):
+            for model in models:
                 model.eval()
 
-                with TT.profile("Evalutate"):
-                    test_loss_x = np.empty(train_cfg.num_eval_batches)
-                    test_loss_u = np.empty(train_cfg.num_eval_batches)
-                    test_loss = np.empty(train_cfg.num_eval_batches)
-                    for k in range(train_cfg.num_eval_batches):
-                        Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
-                        with TT.profile("Forward"), amp_context():
-                            _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
-                        test_loss_x[k] = loss_fn_x(Xf, Xf_pred).item() if Xf_pred is not None else torch.tensor(0)
-                        test_loss_u[k] = loss_fn_u(Uf, Uf_pred).item() if Uf_pred is not None else torch.tensor(0)
-                        test_loss[k] = (1 - train_cfg.alpha) * test_loss_x[k] + train_cfg.alpha * test_loss_u[k]
-                        assert not np.isnan(test_loss[k])
-                    train_results.test_loss_x[j].append(test_loss_x.mean())
-                    train_results.test_loss_u[j].append(test_loss_u.mean())
-                    train_results.test_loss[j].append(test_loss.mean())
-                    train_results.test_loss_x_std[j].append(test_loss_x.std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
-                    train_results.test_loss_u_std[j].append(test_loss_u.std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
-                    train_results.test_loss_std[j].append(test_loss.std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
+            with TT.profile("Evalutate"):
+                test_loss_x = np.empty((train_cfg.num_eval_batches, train_cfg.num_models))
+                test_loss_u = np.empty((train_cfg.num_eval_batches, train_cfg.num_models))
+                test_loss = np.empty((train_cfg.num_eval_batches, train_cfg.num_models))
 
+                ensemble_loss_x = np.empty(train_cfg.num_eval_batches)
+                ensemble_loss_u = np.empty(train_cfg.num_eval_batches)
+                ensemble_loss = np.empty(train_cfg.num_eval_batches)
+
+                for j in range(train_cfg.num_eval_batches):
+                    Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
+                    Xf_pred_mean = torch.zeros_like(Xf)
+                    Uf_pred_mean = torch.zeros_like(Uf)
+                    for k, model in enumerate(models):
+                        with TT.profile("Forward", hits=train_cfg.num_models), amp_context():
+                            _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
+                        Xf_pred_mean += Xf_pred if Xf_pred is not None else 0
+                        Uf_pred_mean += Uf_pred if Uf_pred is not None else 0
+                        test_loss_x[j, k] = loss_fn_x(Xf, Xf_pred).item() if Xf_pred is not None else torch.tensor(0)
+                        test_loss_u[j, k] = loss_fn_u(Uf, Uf_pred).item() if Uf_pred is not None else torch.tensor(0)
+                        test_loss[j, k] = (1 - train_cfg.alpha) * test_loss_x[j, k] + train_cfg.alpha * test_loss_u[j, k]
+                        assert not np.isnan(test_loss[j, k]), "Found nan loss for model %i" % k
+
+                    Xf_pred_mean /= train_cfg.num_models
+                    Uf_pred_mean /= train_cfg.num_models
+
+                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item() if models[0].config.has_dynamics else torch.tensor(0)
+                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item() if models[0].config.has_control else torch.tensor(0)
+                    ensemble_loss[j] = (1 - train_cfg.alpha) * ensemble_loss_x[j] + train_cfg.alpha * ensemble_loss_u[j]
+
+                for k in range(train_cfg.num_models):
+                    train_results.test_loss_x[k].append(test_loss_x[:, k].mean())
+                    train_results.test_loss_u[k].append(test_loss_u[:, k].mean())
+                    train_results.test_loss[k].append(test_loss[:, k].mean())
+                    train_results.test_loss_x_std[k].append(test_loss_x[:, k].std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_u_std[k].append(test_loss_u[:, k].std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
+                    train_results.test_loss_std[k].append(test_loss[:, k].std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
+
+                train_results.ensemble_loss_x.append(ensemble_loss_x.mean())
+                train_results.ensemble_loss_u.append(ensemble_loss_u.mean())
+                train_results.ensemble_loss.append(ensemble_loss.mean())
+
+            for model in models:
                 model.train()
 
             log(
-                "Test loss X: %.6f" % np.array(train_results.test_loss_x)[:, -1].mean(),
-                "Test loss U: %.6f" % np.array(train_results.test_loss_u)[:, -1].mean(),
-                "Test loss:   %.6f" % np.array(train_results.test_loss)[:, -1].mean(),
+                "Mean test loss X: %.6f" % np.array(train_results.test_loss_x)[:, -1].mean(),
+                "Mean test loss U: %.6f" % np.array(train_results.test_loss_u)[:, -1].mean(),
+                "Mean test loss:   %.6f" % np.array(train_results.test_loss)[:, -1].mean(),
+                "Ensemble loss X:  %.6f" % train_results.ensemble_loss_x[-1],
+                "Ensemble loss U:  %.6f" % train_results.ensemble_loss_u[-1],
+                "Ensemble loss:    %.6f" % train_results.ensemble_loss[-1],
             )
 
             # Plot training stuff
@@ -229,7 +255,7 @@ def train(job: JobDescription):
                 loss_x = loss_fn_x(Xf, Xf_pred) if Xf_pred is not None else torch.tensor(0)
                 loss_u = loss_fn_u(Uf, Uf_pred) if Uf_pred is not None else torch.tensor(0)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
-                assert not torch.isnan(loss).isnan().any()
+                assert not torch.isnan(loss).isnan().any(), "NaN training loss for model %i" % j
                 train_results.train_loss_x[j].append(loss_x.item())
                 train_results.train_loss_u[j].append(loss_u.item())
                 train_results.train_loss[j].append(loss.item())
