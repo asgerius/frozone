@@ -5,5 +5,5 @@ from pelutils import DataStorage
 
 @dataclass
 class ForwardConfig(DataStorage):
-    num_samples: int = 10
-    prediction_window: float = 100
+    num_samples: int
+    prediction_window: float
