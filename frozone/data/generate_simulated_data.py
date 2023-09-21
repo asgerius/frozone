@@ -1,6 +1,7 @@
 import os
 import random
 import shutil
+import sys
 import warnings
 from typing import Type
 
@@ -30,4 +31,5 @@ def generate(path: str, env: Type[Environment], num_simulations: int, iters: int
         np.savez_compressed(outpath, X=X[i], U=U[i], S=S[i])
 
 if __name__ == "__main__":
-    generate("data-steuermann", Steuermann, 5000, int(3600 / Steuermann.dt))
+    data_path = sys.argv[1]
+    generate(data_path, Steuermann, 30000, int(3600 / Steuermann.dt))

@@ -75,9 +75,9 @@ class Steuermann(Environment):
 
         S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        response_iters = np.random.randint(iters // 10, iters // 4, n)
+        response_iters = np.random.randint(iters // 15, iters // 4, n)
         response_var = random.choice(list(cls.ULabels))
-        response = np.random.uniform(0.95, 1.05, n)
+        response = np.random.uniform(0.93, 1.03, n)
 
         for i in tqdm(range(iters)):
             U[:, i + 1] = U[:, 0]
