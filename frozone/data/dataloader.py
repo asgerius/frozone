@@ -125,9 +125,7 @@ def _start_dataloader_thread(
 ):
     tt = TickTock()
     tt.tick()
-    log_time_every = 300
-
-    future_include_weights = history_only_vector(env, train_cfg)
+    log_time_every = 30
 
     def task():
         nonlocal log_time_every
@@ -179,7 +177,7 @@ def _start_dataloader_thread(
 
             if tt.tock() > log_time_every and train:
                 log("Batch time distribution", tt)
-                log_time_every += 300
+                log_time_every += 600
                 tt.tick()
 
     def task_wrapper():
