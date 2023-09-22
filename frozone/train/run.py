@@ -15,7 +15,7 @@ warnings.filterwarnings("always")
 options = (
     Argument("env"),
     Argument("data-path"),
-    Option("phase", default=""),
+    Option("phase", type=str, default=None),
 
     # Training parameters
     Option("history-window", type=float, default=30),

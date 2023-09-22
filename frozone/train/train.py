@@ -106,7 +106,7 @@ def train(job: JobDescription):
             dropout = job.dropout,
             activation_fn = job.activation_fn,
         )).to(device)
-        models.append(model)
+        models.append((model, torch.compile(model, disable=True)))
         optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, foreach=True))
         schedulers.append(build_lr_scheduler(train_cfg, optimizers[-1]))
         if i == 0:
@@ -155,7 +155,7 @@ def train(job: JobDescription):
         with TT.profile("Checkpoint"):
 
             # Evaluate
-            for model in models:
+            for model, opt_model in models:
                 model.eval()
 
             with TT.profile("Evalutate"):
@@ -171,7 +171,7 @@ def train(job: JobDescription):
                     Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
                     Xf_pred_mean = torch.zeros_like(Xf)
                     Uf_pred_mean = torch.zeros_like(Uf)
-                    for k, model in enumerate(models):
+                    for k, (model, opt_model) in enumerate(models):
                         with TT.profile("Forward", hits=train_cfg.num_models), amp_context():
                             _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                         Xf_pred_mean += Xf_pred if Xf_pred is not None else 0
@@ -184,8 +184,8 @@ def train(job: JobDescription):
                     Xf_pred_mean /= train_cfg.num_models
                     Uf_pred_mean /= train_cfg.num_models
 
-                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item() if models[0].config.has_dynamics else torch.tensor(0)
-                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item() if models[0].config.has_control else torch.tensor(0)
+                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item() if models[0][0].config.has_dynamics else torch.tensor(0)
+                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item() if models[0][0].config.has_control else torch.tensor(0)
                     ensemble_loss[j] = (1 - train_cfg.alpha) * ensemble_loss_x[j] + train_cfg.alpha * ensemble_loss_u[j]
 
                 for k in range(train_cfg.num_models):
@@ -200,7 +200,7 @@ def train(job: JobDescription):
                 train_results.ensemble_loss_u.append(ensemble_loss_u.mean())
                 train_results.ensemble_loss.append(ensemble_loss.mean())
 
-            for model in models:
+            for model, opt_model in models:
                 model.train()
 
             log(
@@ -223,10 +223,20 @@ def train(job: JobDescription):
             train_cfg.save(job.location)
             train_results.save(job.location)
             for i in range(train_cfg.num_models):
-                models[i].save(job.location, i)
+                models[i][0].save(job.location, i)
 
         if is_rare_checkpoint:
             log("Training time distribution", TT)
+
+            if batch_no > 0:
+                total_examples = train_cfg.num_models * train_cfg.batch_size * batch_no
+                batch_profile = next(p for p in TT.profiles if p.name == "Batch")
+                total_train_time = batch_profile.sum()
+                log(
+                    "Total training time: %s s" % thousands_seperators(round(total_train_time)),
+                    "Total examples seen: %i x %s" % (train_cfg.num_models, thousands_seperators(total_examples // train_cfg.num_models)),
+                    "Average:             %s examples / s" % thousands_seperators(round(total_examples / total_train_time)),
+                )
 
     log.section("Beginning training loop", "Training for %s batches" % thousands_seperators(train_cfg.batches))
     for i in range(train_cfg.batches):
@@ -244,14 +254,14 @@ def train(job: JobDescription):
         train_results.lr.append(schedulers[0].get_last_lr())
 
         for j in range(train_cfg.num_models):
-            model = models[j]
+            model, opt_model = models[j]
             optimizer = optimizers[j]
             scheduler = schedulers[j]
 
             with TT.profile("Get data"):
                 Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
             with TT.profile("Forward"), amp_context():
-                _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
+                _, Xf_pred, Uf_pred = opt_model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                 loss_x = loss_fn_x(Xf, Xf_pred) if Xf_pred is not None else torch.tensor(0)
                 loss_u = loss_fn_u(Uf, Uf_pred) if Uf_pred is not None else torch.tensor(0)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
@@ -277,12 +287,3 @@ def train(job: JobDescription):
         TT.end_profile()
 
     checkpoint(train_cfg.batches)
-
-    total_examples = train_cfg.num_models * train_cfg.batch_size * train_cfg.batches
-    batch_profile = next(p for p in TT.profiles if p.name == "Batch")
-    total_train_time = batch_profile.sum()
-    log(
-        "Total training time: %s s" % thousands_seperators(round(total_train_time)),
-        "Total examples seen: %i x %s" % (train_cfg.num_models, thousands_seperators(total_examples // train_cfg.num_models)),
-        "Average:             %s examples / s" % thousands_seperators(round(total_examples / total_train_time)),
-    )
