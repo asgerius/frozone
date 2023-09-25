@@ -45,9 +45,10 @@ def forward(
         U_true[i] = U[start_index : start_index + timesteps]
         S_true[i] = S[start_index : start_index + timesteps]
     X_pred_m = np.stack([X_true[:, : train_cfg.H + predict_steps]] * train_cfg.num_models, axis=2)
+    X_pred_p = np.stack([X_true[:, : train_cfg.H + train_cfg.F]] * train_cfg.num_models, axis=2)
     X_pred_i = X_pred_m.copy()
 
-    X_pred_m, X_pred_i, U_true, S_true = numpy_to_torch_device(X_pred_m, X_pred_i, U_true, S_true)
+    X_pred_m, X_pred_p, X_pred_i, U_true, S_true = numpy_to_torch_device(X_pred_m, X_pred_p, X_pred_i, U_true, S_true)
 
     log("Running forward estimation")
     for i in range(predict_steps):
@@ -71,20 +72,31 @@ def forward(
                 Uf = U_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
             )[1][:, 0]
 
+            if i == 0:
+                X_pred_p[:, train_cfg.H:, j] = model(
+                    X_pred_m[:, :train_cfg.H].mean(dim=2),
+                    U_true[:, :train_cfg.H],
+                    S_true[:, :train_cfg.H],
+                    S_true[:, train_cfg.H : train_cfg.H + train_cfg.F],
+                    Xf = None,
+                    Uf = U_true[:, train_cfg.H : train_cfg.H + train_cfg.F],
+                )[1]
+
         TT.end_profile()
 
     with TT.profile("Unstandardize"):
         X_true = X_true * train_results.std_x + train_results.mean_x
         X_pred_m = X_pred_m.cpu().numpy() * train_results.std_x + train_results.mean_x
+        X_pred_p = X_pred_p.cpu().numpy() * train_results.std_x + train_results.mean_x
         X_pred_i = X_pred_i.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_true = U_true.cpu().numpy() * train_results.std_u + train_results.mean_u
 
     log("Plotting samples")
     with TT.profile("Plot"):
-        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, X_pred_m, X_pred_i, U_true)
+        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, X_pred_m, X_pred_p, X_pred_i, U_true)
 
 if __name__ == "__main__":
-    parser = Parser(Flag("individual"))
+    parser = Parser()
     job = parser.parse_args()
 
     log.configure(os.path.join(job.location, "forward.log"))
