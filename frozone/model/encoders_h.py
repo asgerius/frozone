@@ -30,13 +30,11 @@ class Transformer(EncoderH):
         super().__init__(config)
 
         positional_encoding = self.build_positional_encoding(config.H)
-        self.embedding = nn.Linear(config.dx + config.du + config.ds, config.dz)
-        self.transformer = BaseTransformer(config, config.dz, positional_encoding)
+        self.transformer = BaseTransformer(config, config.dx + config.du + config.ds, positional_encoding)
 
     def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
         x = torch.concat((Xh, Uh, Sh), dim=2)
-        x_e = self.embedding(x)
-        x_t = self.transformer(x_e)
+        x_t = self.transformer(x)
         return x_t[:, -1]
 
 class GatedTransformer(EncoderH):
@@ -47,11 +45,9 @@ class GatedTransformer(EncoderH):
 
         positional_encoding = self.build_positional_encoding(config.H)
         channel_d = config.dx + config.du + config.ds
-        self.time_embedding = nn.Linear(channel_d, config.dz)
-        self.time_transformer = BaseTransformer(config, config.dz, positional_encoding)
+        self.time_transformer = BaseTransformer(config, channel_d, positional_encoding)
 
-        self.channel_embedding = nn.Linear(config.H, config.dz)
-        self.channel_transformer = BaseTransformer(config, config.dz)
+        self.channel_transformer = BaseTransformer(config, config.H)
 
         self.gate = nn.Linear(config.dz * (config.H + channel_d), 2)
 
@@ -60,13 +56,11 @@ class GatedTransformer(EncoderH):
     def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
         # Time step-wise tower
         x_s = torch.concat((Xh, Uh, Sh), dim=2)
-        x_s_e = self.time_embedding(x_s)
-        x_s_t = self.time_transformer(x_s_e)
+        x_s_t = self.time_transformer(x_s)
 
         # Channel-wise tower
         x_c = x_s.permute(0, 2, 1)
-        x_c_e = self.channel_embedding(x_c)
-        x_c_t = self.channel_transformer(x_c_e)
+        x_c_t = self.channel_transformer(x_c)
 
         h = self.gate(torch.concat((x_s_t, x_c_t), dim=1).flatten(1, -1))
         g = torch.softmax(h, dim=-1)

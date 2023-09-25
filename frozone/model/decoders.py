@@ -47,7 +47,7 @@ class Transformer(Decoder):
         super().__init__(config, is_x=is_x)
 
         positional_encoding = self.build_positional_encoding(1 + config.F)
-        self.transformer = BaseTransformer(config, config.dz, positional_encoding)
+        self.transformer = BaseTransformer(config, config.dz, positional_encoding, embedding=False)
         self.decoder_layer = nn.Linear(config.dz, self.out_d)
 
     def forward(self, zh: torch.FloatTensor, Z: torch.FloatTensor) -> torch.FloatTensor:

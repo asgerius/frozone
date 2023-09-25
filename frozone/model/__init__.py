@@ -133,12 +133,14 @@ class _FloatzoneModule(nn.Module, abc.ABC):
 
 class BaseTransformer(_FloatzoneModule):
 
-    def __init__(self, config: FzConfig, input_d: int, positional_encoding: Optional[nn.Parameter] = None):
+    def __init__(self, config: FzConfig, input_d: int, positional_encoding: Optional[nn.Parameter] = None, *, embedding=True):
         super().__init__(config)
 
         assert config.dz % config.t_nhead == 0, "dz must be divisble by the number of attention heads, t_nhead"
 
-        self.embedding = nn.Linear(input_d, config.dz)
+        self.has_embedding = embedding
+        if embedding:
+            self.embedding = nn.Linear(input_d, config.dz)
 
         self.positional_encoding = positional_encoding
 
@@ -158,9 +160,10 @@ class BaseTransformer(_FloatzoneModule):
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         assert len(x.shape) == 3  # Batch, sequence, feature
 
-        embedding = self.embedding(x)
+        if self.has_embedding:
+            x = self.embedding(x)
 
         if self.positional_encoding is not None:
-            embedding += self.positional_encoding
+            x += self.positional_encoding
 
-        return self.encoder(embedding)
+        return self.encoder(x)
