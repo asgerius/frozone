@@ -32,9 +32,6 @@ class FzNetwork(_FloatzoneModule):
             self.Ex = getattr(encoders_f, encoder_name)(config, config.dx)
             self.Du = getattr(decoders, self.config.decoder_name)(config, is_x=False)
 
-        predict_ref_weights_data = 0.5 ** torch.arange(config.H).flip(0)
-        self.predict_ref_weights = nn.Parameter(predict_ref_weights_data / predict_ref_weights_data.sum(), requires_grad=False)
-
     def __call__(
         self,
         Xh: torch.FloatTensor,
@@ -61,12 +58,10 @@ class FzNetwork(_FloatzoneModule):
 
         if self.config.has_dynamics and Uf is not None:
             Zu = self.Eu(Sf, Xf_or_Uf=Uf)
-            Xh_smooth = Xh.permute(0, 2, 1) @ self.predict_ref_weights
-            Xf_pred = self.Dx(zh, Zu) + Xh_smooth.unsqueeze(dim=1)
+            Xf_pred = self.Dx(zh, Zu) + Xh[:, -1].unsqueeze(dim=1)
 
         if self.config.has_control and Xf is not None:
             Zx = self.Ex(Sf, Xf_or_Uf=Xf)
-            Uh_smooth = Uh.permute(0, 2, 1) @ self.predict_ref_weights
-            Uf_pred = self.Du(zh, Zx) + Uh_smooth.unsqueeze(dim=1)
+            Uf_pred = self.Du(zh, Zx) + Uh[:, -1].unsqueeze(dim=1)
 
         return (zh, Zu, Zx), Xf_pred, Uf_pred
