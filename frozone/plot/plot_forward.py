@@ -1,7 +1,7 @@
 import math
 import os
 import shutil
-from typing import Type
+from typing import Optional, Type
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -17,7 +17,7 @@ from frozone.train import TrainConfig, TrainResults
 # completely breaks when having an asynchronous data loader.
 matplotlib.use('Agg')
 
-_plot_folder = "forward-plots"
+_plot_folder = "predict-plots"
 
 def plot_forward(
     path: str,
@@ -26,15 +26,15 @@ def plot_forward(
     train_results: TrainResults,
     forward_cfg: ForwardConfig,
     X_true: np.ndarray,
-    X_pred_m: np.ndarray,
-    X_pred_p: np.ndarray,
-    X_pred_i: np.ndarray,
     U_true: np.ndarray,
+    X_pred: Optional[np.ndarray],
+    U_pred: Optional[np.ndarray],
 ):
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
-    timestamps_true = np.arange(X_true.shape[1]) * env.dt
-    timestamps_pred = np.arange(X_pred_m.shape[1])[train_cfg.H - 1:] * env.dt
+    sequence_length = train_cfg.H + train_cfg.F
+    timesteps = np.arange(forward_cfg.num_sequences * sequence_length) * env.dt
+
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
     height = math.ceil((len(env.XLabels) + len(env.ULabels)) / width)
 
@@ -58,22 +58,33 @@ def plot_forward(
                 plt.subplot(width, height, j + 1)
                 is_x = isinstance(label, env.XLabels)
                 if is_x:
-                    for k in range(train_cfg.num_models):
-                        plt.plot(
-                            timestamps_pred, X_pred_i[i, train_cfg.H - 1 :, k, j], "-o", color="grey", alpha=0.5,
-                            label="Individual estimates" if k == 0 else None,
-                        )
-                        plt.plot(
-                            timestamps_true[:train_cfg.H + train_cfg.F], X_pred_p[i, :, k, j], "-P", color="grey", alpha=0.5,
-                            label="Prediction horizon" if k == 0 else None,
-                        )
-                    plt.plot(timestamps_pred, X_pred_i[i, train_cfg.H - 1 :, :, j].mean(axis=1), "-o", label="Mean individual estimates")
-                    plt.plot(timestamps_pred, X_pred_m[i, train_cfg.H - 1 :, :, j].mean(axis=1), "-o", label="Mean estimate")
-                    plt.plot(timestamps_true[:train_cfg.H + train_cfg.F], X_pred_p[i, :, :, j].mean(axis=1), "-o", label="Mean prediction horizon")
-
-                    plt.plot(timestamps_true, X_true[i, :, j], "-o", label="True trajectory")
+                    true = X_true
+                    pred = X_pred
                 else:
-                    plt.plot(timestamps_true, U_true[i, :, j - len(env.XLabels)], "-o", label="True trajectory")
+                    true = U_true
+                    pred = U_pred
+
+                plt.plot(timesteps, true[i, :, label], "-o", label="True value")
+                if pred is not None:
+                    for k in range(forward_cfg.num_sequences):
+                        seq_mid = k * sequence_length + train_cfg.H
+                        seq_end = (k + 1) * sequence_length
+                        for l in range(train_cfg.num_models):
+                            plt.plot(
+                                timesteps[seq_mid-1:seq_end],
+                                pred[i, l, seq_mid-1:seq_end, label],
+                                "-o",
+                                alpha=0.4,
+                                color="grey",
+                                label="Individual predictions" if k == l == 0 else None,
+                            )
+                        plt.plot(
+                            timesteps[seq_mid-1:seq_end],
+                            pred[i, :, seq_mid-1:seq_end, label].mean(axis=0),
+                            "-o",
+                            color=plots.tab_colours[1],
+                            label="Mean prediction" if k == 0 else None,
+                        )
 
                 plt.xlabel("Time [s]")
                 plt.ylabel(label.name)

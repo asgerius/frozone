@@ -25,75 +25,63 @@ def forward(
     train_results: TrainResults,
     forward_cfg: ForwardConfig,
 ):
-
-    predict_steps = int(forward_cfg.prediction_window // env.dt)
-    timesteps = train_cfg.H + train_cfg.F + predict_steps - 1
+    sequence_length = train_cfg.H + train_cfg.F
+    timesteps = forward_cfg.num_sequences * sequence_length
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
     dataset = [(X, U, S) for X, U, S in dataset if len(X) >= timesteps]
     log("%s files after filtering" % thousands_seperators(len(dataset)))
-
-    log("Sampling %i cases from the dataset" % forward_cfg.num_samples)
-    dataset = [dataset[i] for i in np.random.choice(len(dataset), forward_cfg.num_samples, replace=True)]
 
     log("Sampling start indices")
     X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=np.float32)
     U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=np.float32)
     S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=np.float32)
-    for i, (X, U, S) in enumerate(dataset):
+    for i, (X, U, S) in enumerate(dataset[:forward_cfg.num_samples]):
         start_index = np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]
         U_true[i] = U[start_index : start_index + timesteps]
         S_true[i] = S[start_index : start_index + timesteps]
-    X_pred_m = np.stack([X_true[:, : train_cfg.H + predict_steps]] * train_cfg.num_models, axis=2)
-    X_pred_p = np.stack([X_true[:, : train_cfg.H + train_cfg.F]] * train_cfg.num_models, axis=2)
-    X_pred_i = X_pred_m.copy()
 
-    X_pred_m, X_pred_p, X_pred_i, U_true, S_true = numpy_to_torch_device(X_pred_m, X_pred_p, X_pred_i, U_true, S_true)
+    X_pred = np.stack([X_true] * train_cfg.num_models, axis=1)
+    U_pred = np.stack([U_true] * train_cfg.num_models, axis=1)
+    X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred)
 
     log("Running forward estimation")
-    for i in range(predict_steps):
-        TT.profile("Time step")
-        log.debug("Step %i / %i" % (i, predict_steps))
-        for j, model in enumerate(models):
-            X_pred_m[:, train_cfg.H + i, j] = model(
-                X_pred_m[:, i : i + train_cfg.H].mean(dim=2),
-                U_true[:, i : i + train_cfg.H],
-                S_true[:, i : i + train_cfg.H],
-                S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
-                Xf = None,
-                Uf = U_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
-            )[1][:, 0]
-            X_pred_i[:, train_cfg.H + i, j] = model(
-                X_pred_i[:, i : i + train_cfg.H, j],
-                U_true[:, i : i + train_cfg.H],
-                S_true[:, i : i + train_cfg.H],
-                S_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
-                Xf = None,
-                Uf = U_true[:, i + train_cfg.H : i + train_cfg.H + train_cfg.F],
-            )[1][:, 0]
-
-            if i == 0:
-                X_pred_p[:, train_cfg.H:, j] = model(
-                    X_pred_m[:, :train_cfg.H].mean(dim=2),
-                    U_true[:, :train_cfg.H],
-                    S_true[:, :train_cfg.H],
-                    S_true[:, train_cfg.H : train_cfg.H + train_cfg.F],
-                    Xf = None,
-                    Uf = U_true[:, train_cfg.H : train_cfg.H + train_cfg.F],
-                )[1]
-
-        TT.end_profile()
+    for i, model in enumerate(models):
+        for j in range(forward_cfg.num_sequences):
+            seq_start = j * sequence_length
+            seq_mid = j * sequence_length + train_cfg.H
+            seq_end = (j + 1) * sequence_length
+            if model.config.has_dynamics:
+                _, X_pred[:, i, seq_mid:seq_end], _ = model(
+                    X_true[:, seq_start:seq_mid],
+                    U_true[:, seq_start:seq_mid],
+                    S_true[:, seq_start:seq_mid],
+                    S_true[:, seq_mid:seq_end],
+                    Uf = U_true[:, seq_mid:seq_end],
+                )
+            if model.config.has_control:
+                _, _, U_pred[:, i, seq_mid:seq_end] = model(
+                    X_true[:, seq_start:seq_mid],
+                    U_true[:, seq_start:seq_mid],
+                    S_true[:, seq_start:seq_mid],
+                    S_true[:, seq_mid:seq_end],
+                    Xf = X_true[:, seq_mid:seq_end],
+                )
 
     with TT.profile("Unstandardize"):
-        X_true = X_true * train_results.std_x + train_results.mean_x
-        X_pred_m = X_pred_m.cpu().numpy() * train_results.std_x + train_results.mean_x
-        X_pred_p = X_pred_p.cpu().numpy() * train_results.std_x + train_results.mean_x
-        X_pred_i = X_pred_i.cpu().numpy() * train_results.std_x + train_results.mean_x
+        X_true = X_true.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_true = U_true.cpu().numpy() * train_results.std_u + train_results.mean_u
+        X_pred = X_pred.cpu().numpy() * train_results.std_x + train_results.mean_x
+        U_pred = U_pred.cpu().numpy() * train_results.std_u + train_results.mean_u
+
+    if not models[0].config.has_dynamics:
+        X_pred = None
+    if not models[0].config.has_control:
+        U_pred = None
 
     log("Plotting samples")
     with TT.profile("Plot"):
-        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, X_pred_m, X_pred_p, X_pred_i, U_true)
+        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_pred, U_pred)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -107,6 +95,7 @@ if __name__ == "__main__":
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
+        forward_cfg = ForwardConfig(num_samples=5, num_sequences=2)
 
         env = train_cfg.get_env()
 
@@ -117,7 +106,7 @@ if __name__ == "__main__":
         log("Loading data")
         with TT.profile("Load data"):
             test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
-            test_dataset = load_data_files(test_npz_files, train_cfg)
+            test_dataset = load_data_files(test_npz_files, train_cfg, max_num_files = 2 * forward_cfg.num_samples)
             log(
                 "Loaded dataset",
                 "Used test files:  %s" % thousands_seperators(len(test_dataset)),
@@ -137,7 +126,7 @@ if __name__ == "__main__":
                 test_dataset,
                 train_cfg,
                 train_results,
-                ForwardConfig(num_samples=5, prediction_window=150),
+                forward_cfg,
             )
 
         log(TT)
