@@ -3,7 +3,7 @@ import os
 import warnings
 
 import torch
-from pelutils import log
+from pelutils import log, TT
 from pelutils.parser import Parser, Argument, Option
 
 import frozone.train
@@ -60,6 +60,8 @@ if __name__ == "__main__":
                 train(job)
             finally:
                 frozone.train.is_doing_training = False
+
+            TT.reset()
 
             # Based on sad experiences in the past, the following may or may not be necessary
             # to prevent a memory leak when running multiple jobs.
