@@ -70,7 +70,7 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         plt.yscale("log")
 
         plt.legend(loc=1)
-        plt.grid()
+        plt.grid(visible=True, which="both")
 
 def plot_lr(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
     with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _plot_folder, "lr.png")):
