@@ -4,6 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pelutils.ds.plots as plots
+from matplotlib.ticker import LogLocator, LogFormatterSciNotation
 from pelutils import TT
 
 from frozone.train import TrainConfig, TrainResults
@@ -68,9 +69,11 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         plt.xlabel("Batch")
         plt.ylabel("Loss")
         plt.yscale("log")
-
+        plt.gca().yaxis.set_minor_locator(LogLocator(10, (2, 3, 5, 7)))
+        plt.gca().yaxis.set_minor_formatter(LogFormatterSciNotation(10, minor_thresholds=(10, 10)))
         plt.legend(loc=1)
-        plt.grid(visible=True, which="both")
+        plt.grid(visible=True, which="major")
+        plt.grid(visible=True, which="minor", ls="--")
 
 def plot_lr(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
     with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _plot_folder, "lr.png")):
