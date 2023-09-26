@@ -11,6 +11,8 @@ from frozone import device, amp_context
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, history_only_vector, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
+from frozone.eval import ForwardConfig
+from frozone.eval.forward import forward
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults
@@ -106,7 +108,7 @@ def train(job: JobDescription):
             dropout = job.dropout,
             activation_fn = job.activation_fn,
         )).to(device)
-        models.append((model, torch.compile(model, disable=True)))
+        models.append(model)
         optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, foreach=True))
         schedulers.append(build_lr_scheduler(train_cfg, optimizers[-1]))
         if i == 0:
@@ -155,7 +157,7 @@ def train(job: JobDescription):
         with TT.profile("Checkpoint"):
 
             # Evaluate
-            for model, opt_model in models:
+            for model in models:
                 model.eval()
 
             with TT.profile("Evalutate"):
@@ -171,7 +173,7 @@ def train(job: JobDescription):
                     Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
                     Xf_pred_mean = torch.zeros_like(Xf)
                     Uf_pred_mean = torch.zeros_like(Uf)
-                    for k, (model, opt_model) in enumerate(models):
+                    for k, model in enumerate(models):
                         with TT.profile("Forward", hits=train_cfg.num_models), amp_context():
                             _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                         Xf_pred_mean += Xf_pred if Xf_pred is not None else 0
@@ -184,8 +186,8 @@ def train(job: JobDescription):
                     Xf_pred_mean /= train_cfg.num_models
                     Uf_pred_mean /= train_cfg.num_models
 
-                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item() if models[0][0].config.has_dynamics else torch.tensor(0)
-                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item() if models[0][0].config.has_control else torch.tensor(0)
+                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item() if models[0].config.has_dynamics else torch.tensor(0)
+                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item() if models[0].config.has_control else torch.tensor(0)
                     ensemble_loss[j] = (1 - train_cfg.alpha) * ensemble_loss_x[j] + train_cfg.alpha * ensemble_loss_u[j]
 
                 for k in range(train_cfg.num_models):
@@ -200,7 +202,19 @@ def train(job: JobDescription):
                 train_results.ensemble_loss_u.append(ensemble_loss_u.mean())
                 train_results.ensemble_loss.append(ensemble_loss.mean())
 
-            for model, opt_model in models:
+            if batch_no == train_cfg.batches:
+                with TT.profile("Forward evalutation"):
+                    forward(
+                        job.location,
+                        env,
+                        models,
+                        test_dataset,
+                        train_cfg,
+                        train_results,
+                        ForwardConfig(num_samples=5, num_sequences=3),
+                    )
+
+            for model in models:
                 model.train()
 
             log(
@@ -223,7 +237,7 @@ def train(job: JobDescription):
             train_cfg.save(job.location)
             train_results.save(job.location)
             for i in range(train_cfg.num_models):
-                models[i][0].save(job.location, i)
+                models[i].save(job.location, i)
 
         if is_rare_checkpoint:
             log("Training time distribution", TT)
@@ -254,14 +268,14 @@ def train(job: JobDescription):
         train_results.lr.append(schedulers[0].get_last_lr())
 
         for j in range(train_cfg.num_models):
-            model, opt_model = models[j]
+            model = models[j]
             optimizer = optimizers[j]
             scheduler = schedulers[j]
 
             with TT.profile("Get data"):
                 Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
             with TT.profile("Forward"), amp_context():
-                _, Xf_pred, Uf_pred = opt_model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
+                _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                 loss_x = loss_fn_x(Xf, Xf_pred) if Xf_pred is not None else torch.tensor(0)
                 loss_u = loss_fn_u(Uf, Uf_pred) if Uf_pred is not None else torch.tensor(0)
                 loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
