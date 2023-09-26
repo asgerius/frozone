@@ -1,5 +1,6 @@
 import gc
 import os
+import time
 import warnings
 
 import torch
@@ -60,6 +61,9 @@ if __name__ == "__main__":
                 train(job)
             finally:
                 frozone.train.is_doing_training = False
+
+            # Wait a little between jobs to make sure data loader thread has time to stop
+            time.sleep(5)
 
             TT.reset()
 
