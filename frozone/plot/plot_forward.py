@@ -65,7 +65,7 @@ def plot_forward(
                     pred = U_pred
 
                 plt.plot(timesteps, true[i, :, label], "-o", label="True value")
-                if pred is not None:
+                if pred is not None and label not in env.history_only_variables:
                     for k in range(forward_cfg.num_sequences):
                         seq_mid = k * sequence_length + train_cfg.H
                         seq_end = (k + 1) * sequence_length
