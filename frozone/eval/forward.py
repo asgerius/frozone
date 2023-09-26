@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Type
 
 import numpy as np
@@ -29,6 +30,7 @@ def forward(
     timesteps = forward_cfg.num_sequences * sequence_length
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
     dataset = [(X, U, S) for X, U, S in dataset if len(X) >= timesteps]
+    random.shuffle(dataset)
     log("%s files after filtering" % thousands_seperators(len(dataset)))
 
     log("Sampling start indices")
@@ -46,6 +48,7 @@ def forward(
     X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred)
 
     log("Running forward estimation")
+    TT.profile("Inference")
     for i, model in enumerate(models):
         for j in range(forward_cfg.num_sequences):
             seq_start = j * sequence_length
@@ -67,6 +70,7 @@ def forward(
                     S_true[:, seq_mid:seq_end],
                     Xf = X_true[:, seq_mid:seq_end],
                 )
+    TT.end_profile()
 
     with TT.profile("Unstandardize"):
         X_true = X_true.cpu().numpy() * train_results.std_x + train_results.mean_x
@@ -118,7 +122,7 @@ if __name__ == "__main__":
             standardize(env, test_dataset, train_results)
 
         log.section("Running forward evaluation")
-        with TT.profile("Forward evaluation"):
+        with TT.profile("Forward"):
             forward(
                 job.location,
                 env,
