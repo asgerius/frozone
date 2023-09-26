@@ -31,6 +31,9 @@ class Environment(abc.ABC):
     # The number of 0 or 1 needed to represent each value in SLabels
     S_bin_count: tuple[int] = tuple()
 
+    # Variables that go into the system dynamics but are not predicted, as they have no reference values
+    history_only_variables: tuple[XLabels] = tuple()
+
     def __init_subclass__(cls):
         super().__init_subclass__()
         assert len(cls.SLabels) == len(cls.S_bin_count)

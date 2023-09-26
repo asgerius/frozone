@@ -104,14 +104,8 @@ def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
 
 def history_only_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.ndarray:
 
-    if env is FloatZone:
-        history_only = (FloatZone.XLabels.PolyAngle, )
-    elif env is Steuermann:
-        history_only = (Steuermann.XLabels.PolyAngle, )
-    else:
-        history_only = tuple()
     x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
-    for xlab in history_only:
+    for xlab in env.history_only_variables:
         x_future_include[xlab] = 0
 
     return x_future_include

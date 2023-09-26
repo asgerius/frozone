@@ -39,3 +39,5 @@ class FloatZone(Environment):
         Machine         = 0
 
     S_bin_count = (12, )
+
+    history_only_variables = (XLabels.PolyAngle, )
