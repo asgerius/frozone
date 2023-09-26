@@ -56,6 +56,7 @@ if __name__ == "__main__":
         log.configure(os.path.join(job.location, "train.log"))
         with log.log_errors:
             log.section("Starting training of job %s" % job.name)
+            log.log_repo()
             try:
                 frozone.train.is_doing_training = True
                 train(job)
