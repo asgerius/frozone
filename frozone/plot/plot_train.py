@@ -52,14 +52,14 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         if plot_control:
             plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), color="black", lw=2.7)
             plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), "-.", color=plots.tab_colours[1], lw=1.5)
-            for loss in test_loss_u:
+            for i, loss in enumerate(test_loss_u):
                 plt.scatter(train_results.checkpoints, loss, marker="3", color=plots.tab_colours[1], s=36, label="Test loss $U$" if i == 0 else None)
             plt.plot(train_results.checkpoints, train_results.ensemble_loss_u, "-o", color="black", lw=2.7, ms=8)
             plt.plot(train_results.checkpoints, train_results.ensemble_loss_u, "-o", color=plots.tab_colours[1], lw=1.5, ms=6, label="Ensemble loss $U$")
         if plot_both:
             plt.plot(train_results.checkpoints, test_loss.mean(axis=0), color="black", lw=2.7)
             plt.plot(train_results.checkpoints, test_loss.mean(axis=0), "-.", color=plots.tab_colours[2], lw=1.5)
-            for loss in test_loss:
+            for i, loss in enumerate(test_loss):
                 plt.scatter(train_results.checkpoints, loss, marker="3", color=plots.tab_colours[2], s=36, label="Test loss" if i == 0 else None)
             plt.plot(train_results.checkpoints, train_results.ensemble_loss, "-o", color="black", lw=2.7, ms=8)
             plt.plot(train_results.checkpoints, train_results.ensemble_loss, "-o", color=plots.tab_colours[2], lw=1.5, ms=6, label="Ensemble loss")
