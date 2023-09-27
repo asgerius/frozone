@@ -8,13 +8,13 @@ from typing import Type
 import numpy as np
 from tqdm import tqdm
 
+import frozone.environments as environments
 from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT
-from frozone.environments import Ball, Environment, Steuermann
 
 
 warnings.filterwarnings("error")
 
-def generate(path: str, env: Type[Environment], num_simulations: int, iters: int):
+def generate(path: str, env: Type[environments.Environment], num_simulations: int, iters: int):
     X, U, S, Z = env.simulate(num_simulations, iters)
 
     shutil.rmtree(os.path.join(path, PROCESSED_SUBDIR), ignore_errors=True)
@@ -32,4 +32,5 @@ def generate(path: str, env: Type[Environment], num_simulations: int, iters: int
 
 if __name__ == "__main__":
     data_path = sys.argv[1]
-    generate(data_path, Steuermann, 20000, int(3600 / Steuermann.dt))
+    env: Type[environments.Environment] = getattr(environments, sys.argv[2])
+    generate(data_path, env, 20000, int(200 / env.dt))
