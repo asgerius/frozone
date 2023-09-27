@@ -141,8 +141,9 @@ if __name__ == "__main__":
     log.configure(os.path.join(job.location, "analysis.log"))
 
     with log.log_errors:
+        log.section("Analysing processed data")
+        analyse_processed_data(job, env)
+
         log.section("Analysing raw data")
         with log.level(100):
             analyse_raw_data(job, env)
-        log.section("Analysing processed data")
-        analyse_processed_data(job, env)
