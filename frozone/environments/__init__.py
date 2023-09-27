@@ -32,7 +32,12 @@ class Environment(abc.ABC):
     S_bin_count: tuple[int] = tuple()
 
     # Variables that go into the system dynamics but are not predicted, as they have no reference values
-    history_only_variables: tuple[XLabels] = tuple()
+    no_reference_variables: tuple[XLabels] = tuple()
+
+    @classmethod
+    def reference_variables(cls) -> tuple[XLabels]:
+        """ Reverse of no_reference_variables """
+        return tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
 
     def __init_subclass__(cls):
         super().__init_subclass__()

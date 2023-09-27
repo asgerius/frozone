@@ -32,4 +32,4 @@ def generate(path: str, env: Type[Environment], num_simulations: int, iters: int
 
 if __name__ == "__main__":
     data_path = sys.argv[1]
-    generate(data_path, Steuermann, 30000, int(3600 / Steuermann.dt))
+    generate(data_path, Steuermann, 20000, int(3600 / Steuermann.dt))

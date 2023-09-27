@@ -40,4 +40,4 @@ class FloatZone(Environment):
 
     S_bin_count = (12, )
 
-    history_only_variables = (XLabels.PolyAngle, )
+    no_reference_variables = (XLabels.PolyDia, XLabels.UpperZone, XLabels.LowerZone, XLabels.MeltVolume, XLabels.PolyAngle, XLabels.CrysAngle)

@@ -102,10 +102,10 @@ def standardize(
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device) for x in args]
 
-def history_only_vector(env: Type[Environment], train_cfg: TrainConfig) -> np.ndarray:
+def history_only_vector(env: Type[Environment]) -> np.ndarray:
 
     x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
-    for xlab in env.history_only_variables:
+    for xlab in env.no_reference_variables:
         x_future_include[xlab] = 0
 
     return x_future_include

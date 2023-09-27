@@ -78,14 +78,14 @@ class Steuermann(Environment):
         S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
         response_iters = np.random.randint(iters // 15, iters // 4, n)
-        response_var = random.choice(list(cls.ULabels))
-        response = np.random.uniform(0.93, 1.03, n)
+        response_vars = [random.choice(list(cls.ULabels)).value for _ in range(n)]
+        response = np.random.uniform(0.93, 1.05, n)
 
         for i in tqdm(range(iters)):
             U[:, i + 1] = U[:, 0]
             for j, response_iter in enumerate(response_iters):
                 if i >= response_iter:
-                    U[j, i + 1, response_var] *= response[j]
+                    U[j, i + 1, response_vars[j]] *= response[j]
 
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],

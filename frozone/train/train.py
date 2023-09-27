@@ -1,5 +1,5 @@
 import math
-from typing import Type
+from typing import Generic, Type
 
 import numpy as np
 import torch
@@ -9,7 +9,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 import frozone.environments as environments
 from frozone import device, amp_context
 from frozone.data import list_processed_data_files
-from frozone.data.dataloader import dataloader, dataset_size, history_only_vector, load_data_files, standardize
+from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.eval import ForwardConfig
 from frozone.eval.forward import forward
@@ -134,7 +134,7 @@ def train(job: JobDescription):
     loss_weight = torch.ones(train_cfg.F, device=device)
     loss_weight = loss_weight / loss_weight.sum()
 
-    future_include_weights = history_only_vector(env, train_cfg)
+    future_include_weights = history_only_vector(env)
     future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
 
     def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
