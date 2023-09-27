@@ -34,9 +34,9 @@ def forward(
     log("%s files after filtering" % thousands_seperators(len(dataset)))
 
     log("Sampling start indices")
-    X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=np.float32)
-    U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=np.float32)
-    S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=np.float32)
+    X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=env.X_dtype)
+    U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
+    S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
     for i, (X, U, S) in enumerate(dataset[:forward_cfg.num_samples]):
         start_index = np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]

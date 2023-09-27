@@ -34,13 +34,10 @@ class Environment(abc.ABC):
     # Variables that go into the system dynamics but are not predicted, as they have no reference values
     no_reference_variables: tuple[XLabels] = tuple()
 
-    @classmethod
-    def reference_variables(cls) -> tuple[XLabels]:
-        """ Reverse of no_reference_variables """
-        return tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
-
     def __init_subclass__(cls):
         super().__init_subclass__()
+        cls.reference_variables = tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
+
         assert len(cls.SLabels) == len(cls.S_bin_count)
         # assert all(x >= 1 for x in cls.S_bin_count)
 
@@ -67,7 +64,7 @@ class Environment(abc.ABC):
         return static_states
 
     @classmethod
-    def simulate(cls, n: int, iters: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, iters: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
@@ -82,7 +79,7 @@ class Environment(abc.ABC):
         S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
         S[:, 0] = cls.sample_init_static_vars(n)
 
-        for i in tqdm(range(iters)):
+        for i in tqdm(range(iters)) if with_tqdm else range(iters):
             if i == 0:
                 U[:, i] = cls.sample_new_control_vars(
                     X[:, i],
@@ -108,28 +105,29 @@ class Environment(abc.ABC):
     @classmethod
     def forward_multiple(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Same as forward, but does multiple forward iterations. X, Z, and U have the same shape as in forward, but U has shape
-        n x iterations x d. Returns X, S, Z. """
+        n x steps x d. Returns X, S, Z. """
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
-        n, iters = U.shape[:2]
+        n, steps = U.shape[:2]
+        new_steps = steps - 1
 
         tmp = X
-        X = np.empty((n, iters + 1, len(cls.XLabels)), dtype=cls.X_dtype)
+        X = np.empty((n, steps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = tmp
 
         tmp = Z
-        Z = np.empty((n, iters + 1, len(cls.ZLabels)), dtype=cls.U_dtype)
+        Z = np.empty((n, steps, len(cls.ZLabels)), dtype=cls.U_dtype)
         Z[:, 0] = tmp
 
         tmp = S
-        S = np.empty((n, iters + 1, len(cls.SLabels)), dtype=cls.S_dtype)
+        S = np.empty((n, steps, len(cls.SLabels)), dtype=cls.S_dtype)
         S[:, 0] = tmp
 
-        for i in range(iters):
+        for i in range(new_steps):
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(X[:, i], U[:, i], S[:, i], Z[:, i])
 
-        return X, S, Z
+        return X[1:], S[1:], Z[1:]
 
 from .ball import Ball
 from .floatzone import FloatZone

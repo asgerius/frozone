@@ -60,12 +60,14 @@ def plot_forward(
                 if is_x:
                     true = X_true
                     pred = X_pred
+                    plot_preds = label not in env.no_reference_variables
                 else:
                     true = U_true
                     pred = U_pred
+                    plot_preds = True
 
                 plt.plot(timesteps, true[i, :, label], "-o", label="True value")
-                if pred is not None and label not in env.no_reference_variables:
+                if pred is not None and plot_preds:
                     for k in range(forward_cfg.num_sequences):
                         seq_mid = k * sequence_length + train_cfg.H
                         seq_end = (k + 1) * sequence_length

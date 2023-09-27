@@ -35,7 +35,7 @@ class Steuermann(Environment):
         CrystallizationRate = 2
         TdGeneratorVoltage = 3
 
-    history_only_variables = (XLabels.PolyAngle, )
+    no_reference_variables = (XLabels.PolyAngle, )
 
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:

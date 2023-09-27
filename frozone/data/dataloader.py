@@ -100,9 +100,9 @@ def standardize(
         dataset[i] = tuple(data.astype(np.float16) for data in dataset[i])
 
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
-    return [torch.from_numpy(x).to(device) for x in args]
+    return [torch.from_numpy(x).to(device).float() for x in args]
 
-def history_only_vector(env: Type[Environment]) -> np.ndarray:
+def history_only_weights(env: Type[Environment]) -> np.ndarray:
 
     x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
     for xlab in env.no_reference_variables:
@@ -137,9 +137,9 @@ def _start_dataloader_thread(
             tt.profile("Generate batch")
 
             # These should not be changed to torch, as the sampling is apparently much faster in numpy
-            X = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, len(env.XLabels)), dtype=np.float32)
-            U = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, len(env.ULabels)), dtype=np.float32)
-            S = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, sum(env.S_bin_count)), dtype=np.float32)
+            X = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, len(env.XLabels)), dtype=env.X_dtype)
+            U = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, len(env.ULabels)), dtype=env.U_dtype)
+            S = np.empty((train_cfg.batch_size, train_cfg.H + train_cfg.F, sum(env.S_bin_count)), dtype=env.S_dtype)
 
             set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True)
 
@@ -152,20 +152,20 @@ def _start_dataloader_thread(
                     U[i] = U_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
                     S[i] = S_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
 
-                if train:
-                    with tt.profile("Augment"):
-                        augment_data(X[i], U[i], train_cfg, tt)
+            # if train:
+            #     with tt.profile("Augment"):
+            #         augment_data(X[i], U[i], train_cfg, tt)
 
-            with tt.profile("Split and exclude"):
-                Xh = X[:, :train_cfg.H]
-                Uh = U[:, :train_cfg.H]
-                Sh = S[:, :train_cfg.H]
-                Xf = X[:, train_cfg.H:]
-                Uf = U[:, train_cfg.H:]
-                Sf = S[:, train_cfg.H:]
             with tt.profile("To device"):
-                arrays_on_device = numpy_to_torch_device(Xh, Uh, Sh, Xf, Uf, Sf)
-            buffer.put(arrays_on_device)
+                X, U, S = numpy_to_torch_device(X, U, S)
+            with tt.profile("Split and contiguous"):
+                Xh = X[:, :train_cfg.H].contiguous()
+                Uh = U[:, :train_cfg.H].contiguous()
+                Sh = S[:, :train_cfg.H].contiguous()
+                Xf = X[:, train_cfg.H:].contiguous()
+                Uf = U[:, train_cfg.H:].contiguous()
+                Sf = S[:, train_cfg.H:].contiguous()
+            buffer.put((Xh, Uh, Sh, Xf, Uf, Sf))
 
             tt.end_profile()
 
@@ -201,7 +201,7 @@ def dataloader(
     is_first = True
     while True:
         batch = buffer.get()
-        if is_first:
+        if not train and is_first:
             is_first = False
             size = sum(tensor_size(x) for x in batch)
             log(

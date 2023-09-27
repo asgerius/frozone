@@ -9,7 +9,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 import frozone.environments as environments
 from frozone import device, amp_context
 from frozone.data import list_processed_data_files
-from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
+from frozone.data.dataloader import dataloader, dataset_size, history_only_weights, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.eval import ForwardConfig
 from frozone.eval.forward import forward
@@ -129,20 +129,24 @@ def train(job: JobDescription):
     elif train_cfg.loss_fn == "l2":
         loss_fn = torch.nn.MSELoss(reduction="none")
     elif train_cfg.loss_fn == "huber":
-        _loss_fn = torch.nn.HuberLoss(reduction="none", delta=0.05)
+        _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
         loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
     loss_weight = torch.ones(train_cfg.F, device=device)
     loss_weight = loss_weight / loss_weight.sum()
 
-    future_include_weights = history_only_vector(env)
+    future_include_weights = history_only_weights(env)
     future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
 
     def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
         loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
         return (loss.T @ loss_weight * future_include_weights).mean()
     def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
-        return loss_fn(u_target, u_pred).mean()
+        loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
+        return (loss.T @ loss_weight).mean()
 
+    log_every = 100
+    checkpoint_every = 250
+    rare_checkpoint_every = 15
     rare_checkpoint_counter = 1
     @torch.inference_mode()
     def checkpoint(batch_no: int):
@@ -152,7 +156,7 @@ def train(job: JobDescription):
         log("Doing checkpoint at batch %i" % batch_no)
         train_results.checkpoints.append(batch_no)
 
-        is_rare_checkpoint = rare_checkpoint_counter == 0 or batch_no == train_cfg.batches
+        is_rare_checkpoint = rare_checkpoint_counter == 0 or batch_no == checkpoint_every or batch_no == train_cfg.batches
 
         with TT.profile("Checkpoint"):
 
@@ -231,7 +235,7 @@ def train(job: JobDescription):
                 log("Plotting training progress")
                 plot_loss(job.location, train_cfg, train_results)
                 plot_lr(job.location, train_cfg, train_results)
-            rare_checkpoint_counter = (rare_checkpoint_counter + 1) % 10
+            rare_checkpoint_counter = (rare_checkpoint_counter + 1) % rare_checkpoint_every
 
             # Save training progress
             train_cfg.save(job.location)
@@ -254,8 +258,8 @@ def train(job: JobDescription):
 
     log.section("Beginning training loop", "Training for %s batches" % thousands_seperators(train_cfg.batches))
     for i in range(train_cfg.batches):
-        is_checkpoint = i % 500 == 0
-        do_log = i == 0 or i == train_cfg.batches - 1 or i % 100 == 0
+        is_checkpoint = i % checkpoint_every == 0
+        do_log = i == 0 or i == train_cfg.batches - 1 or i % log_every == 0
 
         if is_checkpoint:
             checkpoint(i)
