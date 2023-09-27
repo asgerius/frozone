@@ -17,4 +17,4 @@ class SimulationConfig(DataStorage):
     simulation_length: float  # In seconds
 
     def simulation_steps(self, env: Type[Environment]) -> int:
-        return self.simulation_length // env.dt
+        return int(self.simulation_length / env.dt)

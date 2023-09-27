@@ -11,8 +11,9 @@ from frozone import device, amp_context
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, history_only_weights, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
-from frozone.eval import ForwardConfig
+from frozone.eval import ForwardConfig, SimulationConfig
 from frozone.eval.forward import forward
+from frozone.eval.simulated_control import simulated_control
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults
@@ -153,7 +154,7 @@ def train(job: JobDescription):
         """ Performs checkpoint operations such as saving model progress, plotting, evaluation, etc. """
         nonlocal rare_checkpoint_counter
 
-        log("Doing checkpoint at batch %i" % batch_no)
+        log("Doing checkpoint at batch %i / %i" % (batch_no, train_cfg.batches))
         train_results.checkpoints.append(batch_no)
 
         is_rare_checkpoint = rare_checkpoint_counter == 0 or batch_no == checkpoint_every or batch_no == train_cfg.batches
@@ -217,6 +218,17 @@ def train(job: JobDescription):
                         train_results,
                         ForwardConfig(num_samples=5, num_sequences=3),
                     )
+
+                if env.is_simulation:
+                    with TT.profile("Simulate control"):
+                        simulated_control(
+                            job.location,
+                            env,
+                            models,
+                            train_cfg,
+                            train_results,
+                            SimulationConfig(5, 500 * env.dt),
+                        )
 
             for model in models:
                 model.train()

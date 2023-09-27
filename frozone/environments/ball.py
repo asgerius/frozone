@@ -32,6 +32,13 @@ class Ball(Environment):
 
     S_bin_count = (1, 1, 1)
 
+    _reg = 5
+    control_limits = {
+        ULabels.F0: (0, 1),
+        ULabels.F1: (0, 1),
+        ULabels.F2: (0, 1),
+    }
+
     @classmethod
     def sample_init_process_vars(cls, n: int) -> tuple[np.ndarray, np.ndarray]:
         process_states = super().sample_init_process_vars(n)
@@ -45,11 +52,10 @@ class Ball(Environment):
 
     @classmethod
     def sample_new_control_vars(cls, process_states: np.ndarray, prev_control_states: np.ndarray) -> np.ndarray:
-        reg = 10
-        f0 = np.random.normal(prev_control_states[:, 0], cls.dt / reg)
-        f1 = np.random.normal(prev_control_states[:, 1], cls.dt / reg)
-        f2 = np.random.normal(prev_control_states[:, 2], cls.dt / reg)
-        return 1 / (1 + cls.dt / reg) * np.maximum(np.vstack((f0, f1, f2)).T, 0)
+        f0 = np.random.normal(prev_control_states[:, 0], cls.dt / cls._reg)
+        f1 = np.random.normal(prev_control_states[:, 1], cls.dt / cls._reg)
+        f2 = np.random.normal(prev_control_states[:, 2], cls.dt / cls._reg)
+        return 1 / (1 + cls.dt / cls._reg) * np.maximum(np.vstack((f0, f1, f2)).T, 0)
 
     @classmethod
     def sample_init_hidden_vars(cls, n: int) -> np.ndarray:

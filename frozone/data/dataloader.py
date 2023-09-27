@@ -15,7 +15,7 @@ from pelutils import TickTock, log, LogLevels, thousands_seperators
 
 import frozone.train
 from frozone import device, tensor_size
-from frozone.data import DataSequence, Dataset
+from frozone.data import DataSequence, Dataset, DatasetSim
 from frozone.data.augment import augment as augment_data
 from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
@@ -48,7 +48,7 @@ def dataset_size(dataset: Dataset) -> int:
 
 def standardize(
     env: Type[Environment],
-    dataset: Dataset,
+    dataset: Dataset | DatasetSim,
     train_results: TrainResults,
 ) -> int:
     """ Calculates the feature-wise mean and standard deviations of X and U for the given data set. """
@@ -71,7 +71,7 @@ def standardize(
         mean_u = sum_u / n
 
         # Calculate variance
-        for X, U, S in dataset:
+        for X, U, S, *_ in dataset:
             X[...] = X - mean_x
             U[...] = U - mean_u
 
@@ -88,12 +88,12 @@ def standardize(
 
     else:
 
-        for X, U, S in dataset:
+        for X, U, S, *_ in dataset:
             X[...] = X - train_results.mean_x
             U[...] = U - train_results.mean_u
 
     eps = 1e-6
-    for i, (X, U, S) in enumerate(dataset):
+    for i, (X, U, S, *_) in enumerate(dataset):
         X[...] = X / (train_results.std_x + eps)
         U[...] = U / (train_results.std_u + eps)
 

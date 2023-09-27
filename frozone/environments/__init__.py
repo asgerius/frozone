@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import enum
+from typing import Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -34,12 +35,27 @@ class Environment(abc.ABC):
     # Variables that go into the system dynamics but are not predicted, as they have no reference values
     no_reference_variables: tuple[XLabels] = tuple()
 
+    control_limits: dict[ULabels, tuple[float | None, float | None]] = dict()
+
     def __init_subclass__(cls):
         super().__init_subclass__()
         cls.reference_variables = tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
 
         assert len(cls.SLabels) == len(cls.S_bin_count)
         # assert all(x >= 1 for x in cls.S_bin_count)
+
+    @classmethod
+    def limit_control(cls, U: np.ndarray, mean: Optional[np.ndarray] = None, std: Optional[np.ndarray] = None) -> np.ndarray:
+        if mean is None:
+            mean = np.zeros(len(cls.ULabels))
+            std = np.ones(len(cls.ULabels))
+        U = U.copy()
+        for ulab, (lower, upper) in cls.control_limits.items():
+            if lower is not None:
+                U[..., ulab] = np.maximum((lower - mean[ulab]) / std[ulab], U[..., ulab])
+            if upper is not None:
+                U[..., ulab] = np.minimum((upper - mean[ulab]) / std[ulab], U[..., ulab])
+        return U
 
     @abc.abstractclassmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
@@ -64,22 +80,22 @@ class Environment(abc.ABC):
         return static_states
 
     @classmethod
-    def simulate(cls, n: int, iters: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, timesteps: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
-        X = np.empty((n, iters + 1, len(cls.XLabels)), dtype=cls.X_dtype)
+        X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
 
-        Z = np.empty((n, iters + 1, len(cls.ZLabels)), dtype=cls.X_dtype)
+        Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
         Z[:, 0] = cls.sample_init_hidden_vars(n)
 
-        U = np.empty((n, iters + 1, len(cls.ULabels)), dtype=cls.U_dtype)
+        U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
 
-        S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
+        S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
         S[:, 0] = cls.sample_init_static_vars(n)
 
-        for i in tqdm(range(iters)) if with_tqdm else range(iters):
+        for i in tqdm(range(timesteps-1)) if with_tqdm else range(timesteps-1):
             if i == 0:
                 U[:, i] = cls.sample_new_control_vars(
                     X[:, i],

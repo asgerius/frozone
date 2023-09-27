@@ -9,7 +9,7 @@ import numpy as np
 import pelutils.ds.plots as plots
 
 from frozone.environments import Environment
-from frozone.eval import ForwardConfig
+from frozone.eval import SimulationConfig
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -17,23 +17,26 @@ from frozone.train import TrainConfig, TrainResults
 # completely breaks when having an asynchronous data loader.
 matplotlib.use('Agg')
 
-_plot_folder = "predict-plots"
+_plot_folder = "control-plots"
 
-def plot_forward(
+def plot_simulated_control(
     path: str,
     env: Type[Environment],
     train_cfg: TrainConfig,
     train_results: TrainResults,
-    forward_cfg: ForwardConfig,
+    simulation_cfg: SimulationConfig,
     X_true: np.ndarray,
     U_true: np.ndarray,
-    X_pred: Optional[np.ndarray],
-    U_pred: Optional[np.ndarray],
+    X_pred: np.ndarray,
+    U_pred: np.ndarray,
+    X_pred_by_model: np.ndarray,
+    U_pred_by_model: np.ndarray,
 ):
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
-    sequence_length = train_cfg.H + train_cfg.F
-    timesteps = np.arange(forward_cfg.num_sequences * sequence_length) * env.dt
+    timesteps_true = np.arange(X_true.shape[1]) * env.dt
+    timesteps_pred_index = train_cfg.H + np.arange(simulation_cfg.simulation_steps(env))
+    timesteps_pred = timesteps_pred_index * env.dt
 
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
     height = math.ceil((len(env.XLabels) + len(env.ULabels)) / width)
@@ -47,7 +50,7 @@ def plot_forward(
                 yield env.ULabels(i - len(env.XLabels))
             i += 1
 
-    for i in range(forward_cfg.num_samples):
+    for i in range(simulation_cfg.num_samples):
         label_maker = get_next_label()
         with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.png" % i), figsize=(12.5 * width, height * 10)):
             for j in range(width * height):
@@ -60,39 +63,33 @@ def plot_forward(
                 if is_x:
                     true = X_true
                     pred = X_pred
-                    plot_preds = label not in env.no_reference_variables
+                    pred_by_model = X_pred_by_model
                 else:
                     true = U_true
                     pred = U_pred
-                    plot_preds = True
+                    pred_by_model = U_pred_by_model
 
-                plt.plot(timesteps, true[i, :, label], "-o", label="True value")
-                if pred is not None and plot_preds:
-                    for k in range(forward_cfg.num_sequences):
-                        seq_mid = k * sequence_length + train_cfg.H
-                        seq_end = (k + 1) * sequence_length
-                        for l in range(train_cfg.num_models):
-                            plt.plot(
-                                timesteps[seq_mid-1:seq_end],
-                                pred[i, l, seq_mid-1:seq_end, label],
-                                "-o",
-                                alpha=0.4,
-                                color="grey",
-                                label="Individual predictions" if k == l == 0 else None,
-                            )
-                        plt.plot(
-                            timesteps[seq_mid-1:seq_end],
-                            pred[i, :, seq_mid-1:seq_end, label].mean(axis=0),
-                            "-o",
-                            color=plots.tab_colours[1],
-                            label="Mean prediction" if k == 0 else None,
-                        )
+                plt.plot(timesteps_true, true[i, :, label], label="True value")
+                for l in range(train_cfg.num_models):
+                    plt.plot(
+                        timesteps_pred,
+                        pred_by_model[i, l, timesteps_pred_index, label],
+                        alpha=0.4,
+                        color="grey",
+                        label="Individual predictions" if l == 0 else None,
+                    )
+                plt.plot(
+                    timesteps_pred,
+                    pred[i, timesteps_pred_index, label],
+                    color=plots.tab_colours[1],
+                    label="Mean prediction",
+                )
 
                 plt.xlabel("Time [s]")
                 plt.ylabel(label.name)
                 plt.legend()
 
-                margin = 0.5
+                margin = 1
                 true_min = true[i, :, label].min()
                 true_max = true[i, :, label].max()
                 plt.ylim(
