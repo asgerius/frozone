@@ -5,10 +5,10 @@ from typing import Type
 import numpy as np
 import torch
 from pelutils import TT, log, thousands_seperators
-from pelutils.parser import Flag, Parser
+from pelutils.parser import Parser
 
 import frozone.environments as environments
-from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, list_processed_data_files
+from frozone.data import TEST_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import Dataset, dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import ForwardConfig
 from frozone.model.floatzone_network import FzNetwork
@@ -100,6 +100,7 @@ if __name__ == "__main__":
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
         forward_cfg = ForwardConfig(num_samples=5, num_sequences=2)
+        forward_cfg.save(job.location)
 
         env = train_cfg.get_env()
 
