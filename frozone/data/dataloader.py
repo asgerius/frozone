@@ -11,13 +11,13 @@ from typing import Generator, Optional, Type
 
 import numpy as np
 import torch
-from pelutils import TickTock, log, LogLevels
+from pelutils import TickTock, log, LogLevels, thousands_seperators
 
 import frozone.train
-from frozone import device
+from frozone import device, tensor_size
 from frozone.data import DataSequence, Dataset
 from frozone.data.augment import augment as augment_data
-from frozone.environments import Environment, FloatZone, Steuermann
+from frozone.environments import Environment
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -193,9 +193,19 @@ def dataloader(
     train = False,
 ) -> Generator[tuple[torch.FloatTensor], None, None]:
 
-    buffer = Queue(maxsize = 2 * train_cfg.num_models)
+    buffer_size = 2 * train_cfg.num_models
+    buffer = Queue(maxsize=buffer_size)
 
     _start_dataloader_thread(env, train_cfg, dataset, buffer, train=train)
 
+    is_first = True
     while True:
-        yield buffer.get()
+        batch = buffer.get()
+        if is_first:
+            is_first = False
+            size = sum(tensor_size(x) for x in batch)
+            log(
+                "Size of batch:  %s b" % thousands_seperators(size),
+                "Size of buffer: %s b" % thousands_seperators(size * buffer_size),
+            )
+        yield batch
