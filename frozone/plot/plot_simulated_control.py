@@ -70,13 +70,13 @@ def plot_simulated_control(
                     pred_by_model = U_pred_by_model
 
                 plt.plot(timesteps_true, true[i, :, label], label="True value")
-                for l in range(train_cfg.num_models):
+                for k in range(train_cfg.num_models):
                     plt.plot(
                         timesteps_pred,
-                        pred_by_model[i, l, timesteps_pred_index, label],
+                        pred_by_model[i, k, timesteps_pred_index, label],
                         alpha=0.4,
                         color="grey",
-                        label="Individual predictions" if l == 0 else None,
+                        label="Individual predictions" if k == 0 else None,
                     )
                 plt.plot(
                     timesteps_pred,
@@ -89,7 +89,7 @@ def plot_simulated_control(
                 plt.ylabel(label.name)
                 plt.legend()
 
-                margin = 1
+                margin = 0.4
                 true_min = true[i, :, label].min()
                 true_max = true[i, :, label].max()
                 plt.ylim(

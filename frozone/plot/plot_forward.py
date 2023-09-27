@@ -92,7 +92,7 @@ def plot_forward(
                 plt.ylabel(label.name)
                 plt.legend()
 
-                margin = 0.5
+                margin = 0.4
                 true_min = true[i, :, label].min()
                 true_max = true[i, :, label].max()
                 plt.ylim(
