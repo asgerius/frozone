@@ -59,7 +59,7 @@ class Steuermann(Environment):
         return U
 
     @classmethod
-    def simulate(cls, n: int, iters: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, iters: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
@@ -81,7 +81,7 @@ class Steuermann(Environment):
         response_vars = [random.choice(list(cls.ULabels)).value for _ in range(n)]
         response = np.random.uniform(0.93, 1.05, n)
 
-        for i in tqdm(range(iters)):
+        for i in tqdm(range(iters)) if with_tqdm else range(iters):
             U[:, i + 1] = U[:, 0]
             for j, response_iter in enumerate(response_iters):
                 if i >= response_iter:
