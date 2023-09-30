@@ -1,6 +1,7 @@
 import math
 import os
 import shutil
+import warnings
 from typing import Optional, Type
 
 import matplotlib
@@ -12,6 +13,8 @@ from frozone.environments import Environment
 from frozone.eval import ForwardConfig
 from frozone.train import TrainConfig, TrainResults
 
+
+warnings.filterwarnings("error")
 
 # Use a non-gui backend. For God knows what reason, using the default TkAgg GUI based backend
 # completely breaks when having an asynchronous data loader.
@@ -95,8 +98,12 @@ def plot_forward(
                 margin = 0.4
                 true_min = true[i, :, label].min()
                 true_max = true[i, :, label].max()
-                plt.ylim(
-                    bottom = true_min - margin * (true_max - true_min),
-                    top = true_max + margin * (true_max - true_min))
+                try:
+                    plt.ylim(
+                        bottom = true_min - margin * (true_max - true_min),
+                        top = true_max + margin * (true_max - true_min),
+                    )
+                except UserWarning:
+                    pass
 
                 plt.grid()

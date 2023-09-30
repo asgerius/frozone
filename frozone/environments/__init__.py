@@ -8,6 +8,8 @@ import numpy as np
 from tqdm import tqdm
 
 
+from frozone.train import TrainResults
+
 class Environment(abc.ABC):
 
     X_dtype = np.float32
@@ -117,6 +119,26 @@ class Environment(abc.ABC):
     def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Does a single forward pass. All input matrices should have shape n x D, where n is the number of concurrent simulations
         and D is the dimensionality of that particular variable. Return X, S, Z. """
+
+    @classmethod
+    def forward_standardized(
+        cls,
+        X: np.ndarray,
+        U: np.ndarray,
+        S: np.ndarray,
+        Z: np.ndarray,
+        train_results: TrainResults,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """ Same as forward, but X and U are taken in the standardized domain. The returned X is also standardized. """
+        eps = 1e-6
+        X = X * (train_results.std_x + eps) + train_results.mean_x
+        U = U * (train_results.std_u + eps) + train_results.mean_u
+
+        X, S, Z = cls.forward(X, U, S, Z)
+
+        X = (X - train_results.mean_x) / (train_results.std_x + eps)
+
+        return X, S, Z
 
 from .ball import Ball
 from .floatzone import FloatZone

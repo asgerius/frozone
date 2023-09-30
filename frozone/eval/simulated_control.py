@@ -1,5 +1,6 @@
 import os
 import random
+import warnings
 from typing import Type
 
 import numpy as np
@@ -15,6 +16,8 @@ from frozone.model.floatzone_network import FzNetwork
 from frozone.plot.plot_simulated_control import plot_simulated_control
 from frozone.train import TrainConfig, TrainResults
 
+
+warnings.filterwarnings("error")
 
 @torch.inference_mode()
 def simulated_control(
@@ -72,11 +75,12 @@ def simulated_control(
                 Xf = numpy_to_torch_device(X_true[:, seq_mid:seq_end])[0],
             )[2][:, 0].cpu().numpy(), mean=train_results.mean_u, std=train_results.std_u)
 
-            X_pred_by_model[:, j, seq_mid], S_pred_by_model[:, j, seq_mid], Z_pred_by_model[:, j, seq_mid] = env.forward(
+            X_pred_by_model[:, j, seq_mid], S_pred_by_model[:, j, seq_mid], Z_pred_by_model[:, j, seq_mid] = env.forward_standardized(
                 X_pred_by_model[:, j, seq_mid-1],
                 U_pred_by_model[:, j, seq_mid-1],
                 S_pred_by_model[:, j, seq_mid-1],
                 Z_pred_by_model[:, j, seq_mid-1],
+                train_results,
             )
 
             # Ensemble prediction
@@ -91,11 +95,12 @@ def simulated_control(
 
         U_pred[:, seq_mid] = env.limit_control(U_pred[:, seq_mid], mean=train_results.mean_u, std=train_results.std_u)
 
-        X_pred[:, seq_mid], S_pred[:, seq_mid], Z_pred[:, seq_mid] = env.forward(
+        X_pred[:, seq_mid], S_pred[:, seq_mid], Z_pred[:, seq_mid] = env.forward_standardized(
             X_pred[:, seq_mid-1],
             U_pred[:, seq_mid-1],
             S_pred[:, seq_mid-1],
             Z_pred[:, seq_mid-1],
+            train_results,
         )
 
     TT.end_profile()
@@ -140,7 +145,7 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(2, 100 * env.dt)
+        simulation_cfg = SimulationConfig(3, 500 * env.dt)
         simulation_cfg.save(job.location)
 
         log("Loading models")
