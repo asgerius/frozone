@@ -1,5 +1,6 @@
 import enum
 import random
+import warnings
 
 import numpy as np
 from tqdm import tqdm
@@ -8,6 +9,8 @@ from frozone.environments import Environment
 from frozone.environments.steuermann_model.framework import simulate
 from frozone.environments.steuermann_model.model.model import f
 
+
+warnings.filterwarnings("error")
 
 class Steuermann(Environment):
 
@@ -37,6 +40,12 @@ class Steuermann(Environment):
 
     no_reference_variables = (XLabels.PolyAngle, )
 
+    # control_limits = {
+    #     ULabels.GeneratorVoltage: (5 * 0.9, 5 * 1.1),
+    #     ULabels.PolyPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
+    #     ULabels.CrystalPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
+    # }
+
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
         X = super().sample_init_process_vars(n)
@@ -59,29 +68,29 @@ class Steuermann(Environment):
         return U
 
     @classmethod
-    def simulate(cls, n: int, iters: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, timesteps: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if not cls.is_simulation:
             raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
-        X = np.empty((n, iters + 1, len(cls.XLabels)), dtype=cls.X_dtype)
+        X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
 
-        U = np.empty((n, iters + 1, len(cls.ULabels)), dtype=cls.U_dtype)
+        U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
         U[:, 0] = cls.sample_init_control_vars(n)
 
-        Z = np.empty((n, iters + 1, len(cls.ZLabels)), dtype=cls.X_dtype)
-        Z[..., cls.ZLabels.Time] = np.arange(0, iters + 1) * cls.dt
+        Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
+        Z[..., cls.ZLabels.Time] = np.arange(0, timesteps) * cls.dt
         Z[:, 0, cls.ZLabels.MeltingRate] = U[:, 0, cls.ULabels.PolyPullRate]
         Z[:, 0, cls.ZLabels.CrystallizationRate] = U[:, 0, cls.ULabels.CrystalPullRate]
         Z[:, 0, cls.ZLabels.TdGeneratorVoltage] = U[:, 0, cls.ULabels.GeneratorVoltage]
 
-        S = np.empty((n, iters + 1, sum(cls.S_bin_count)), dtype=cls.S_dtype)
+        S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        response_iters = np.random.randint(iters // 15, iters // 4, n)
+        response_iters = np.random.randint(timesteps // 15, timesteps // 4, n)
         response_vars = [random.choice(list(cls.ULabels)).value for _ in range(n)]
         response = np.random.uniform(0.93, 1.05, n)
 
-        for i in tqdm(range(iters)) if with_tqdm else range(iters):
+        for i in tqdm(range(timesteps-1)) if with_tqdm else range(timesteps-1):
             U[:, i + 1] = U[:, 0]
             for j, response_iter in enumerate(response_iters):
                 if i >= response_iter:
