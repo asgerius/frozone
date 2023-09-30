@@ -118,33 +118,6 @@ class Environment(abc.ABC):
         """ Does a single forward pass. All input matrices should have shape n x D, where n is the number of concurrent simulations
         and D is the dimensionality of that particular variable. Return X, S, Z. """
 
-    @classmethod
-    def forward_multiple(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """ Same as forward, but does multiple forward iterations. X, Z, and U have the same shape as in forward, but U has shape
-        n x steps x d. Returns X, S, Z. """
-        if not cls.is_simulation:
-            raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
-
-        n, steps = U.shape[:2]
-        new_steps = steps - 1
-
-        tmp = X
-        X = np.empty((n, steps, len(cls.XLabels)), dtype=cls.X_dtype)
-        X[:, 0] = tmp
-
-        tmp = Z
-        Z = np.empty((n, steps, len(cls.ZLabels)), dtype=cls.U_dtype)
-        Z[:, 0] = tmp
-
-        tmp = S
-        S = np.empty((n, steps, len(cls.SLabels)), dtype=cls.S_dtype)
-        S[:, 0] = tmp
-
-        for i in range(new_steps):
-            X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(X[:, i], U[:, i], S[:, i], Z[:, i])
-
-        return X[1:], S[1:], Z[1:]
-
 from .ball import Ball
 from .floatzone import FloatZone
 from .steuermann import Steuermann
