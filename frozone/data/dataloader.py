@@ -102,14 +102,6 @@ def standardize(
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device).float() for x in args]
 
-def history_only_weights(env: Type[Environment]) -> np.ndarray:
-
-    x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
-    for xlab in env.no_reference_variables:
-        x_future_include[xlab] = 0
-
-    return x_future_include
-
 def _start_dataloader_thread(
     env: Type[Environment],
     train_cfg: TrainConfig,

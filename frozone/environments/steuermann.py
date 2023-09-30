@@ -40,11 +40,11 @@ class Steuermann(Environment):
 
     no_reference_variables = (XLabels.PolyAngle, )
 
-    # control_limits = {
-    #     ULabels.GeneratorVoltage: (5 * 0.9, 5 * 1.1),
-    #     ULabels.PolyPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
-    #     ULabels.CrystalPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
-    # }
+    control_limits = {
+        ULabels.GeneratorVoltage: (5 * 0.9, 5 * 1.1),
+        ULabels.PolyPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
+        ULabels.CrystalPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
+    }
 
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:

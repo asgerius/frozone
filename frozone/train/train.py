@@ -9,14 +9,14 @@ from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 import frozone.environments as environments
 from frozone import device, amp_context
 from frozone.data import list_processed_data_files
-from frozone.data.dataloader import dataloader, dataset_size, history_only_weights, load_data_files, standardize
+from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.eval import ForwardConfig, SimulationConfig
 from frozone.eval.forward import forward
 from frozone.eval.simulated_control import simulated_control
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
-from frozone.train import TrainConfig, TrainResults
+from frozone.train import TrainConfig, TrainResults, get_loss_fns
 
 
 def cuda_sync():
@@ -125,25 +125,7 @@ def train(job: JobDescription):
                 "Total:            %s" % thousands_seperators(model.numel()),
             )
 
-    if train_cfg.loss_fn == "l1":
-        loss_fn = torch.nn.L1Loss(reduction="none")
-    elif train_cfg.loss_fn == "l2":
-        loss_fn = torch.nn.MSELoss(reduction="none")
-    elif train_cfg.loss_fn == "huber":
-        _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
-        loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
-    loss_weight = torch.ones(train_cfg.F, device=device)
-    loss_weight = loss_weight / loss_weight.sum()
-
-    future_include_weights = history_only_weights(env)
-    future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
-
-    def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
-        loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-        return (loss.T @ loss_weight * future_include_weights).mean()
-    def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
-        loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
-        return (loss.T @ loss_weight).mean()
+    loss_fn_x, loss_fn_u = get_loss_fns(env, train_cfg)
 
     log_every = 100
     checkpoint_every = 250
@@ -227,7 +209,7 @@ def train(job: JobDescription):
                             models,
                             train_cfg,
                             train_results,
-                            SimulationConfig(5, 500 * env.dt),
+                            SimulationConfig(5, 500 * env.dt, env.dt, 10, 1e-2),
                         )
 
             for model in models:

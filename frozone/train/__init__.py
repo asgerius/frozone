@@ -3,17 +3,50 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pprint import pformat
-from typing import Optional, Type
+from typing import Callable, Optional, Type
 
 import numpy as np
+import torch
 from pelutils import DataStorage
 
 import frozone.environments as environments
+from frozone import device
 
 
 # This global variable is used to indicate to threads whether or not a training is running.
 # If it is false, threads should stop within a very short amount of time.
 is_doing_training = False
+
+def history_only_weights(env: Type[environments.Environment]) -> np.ndarray:
+
+    x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
+    for xlab in env.no_reference_variables:
+        x_future_include[xlab] = 0
+
+    return x_future_include
+
+def get_loss_fns(env: Type[environments.Environment], train_cfg: TrainConfig) -> tuple[Callable, Callable]:
+    if train_cfg.loss_fn == "l1":
+        loss_fn = torch.nn.L1Loss(reduction="none")
+    elif train_cfg.loss_fn == "l2":
+        loss_fn = torch.nn.MSELoss(reduction="none")
+    elif train_cfg.loss_fn == "huber":
+        _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
+        loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
+    loss_weight = torch.ones(train_cfg.F, device=device)
+    loss_weight = loss_weight / loss_weight.sum()
+
+    future_include_weights = history_only_weights(env)
+    future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
+
+    def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
+        loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
+        return (loss.T @ loss_weight * future_include_weights).mean()
+    def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
+        loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
+        return (loss.T @ loss_weight).mean()
+
+    return loss_fn_x, loss_fn_u
 
 @dataclass
 class TrainConfig(DataStorage):

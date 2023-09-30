@@ -32,6 +32,8 @@ def plot_simulated_control(
     U_true: np.ndarray,
     X_pred: np.ndarray,
     U_pred: np.ndarray,
+    X_pred_opt: np.ndarray,
+    U_pred_opt: np.ndarray,
     X_pred_by_model: np.ndarray,
     U_pred_by_model: np.ndarray,
 ):
@@ -66,10 +68,12 @@ def plot_simulated_control(
                 if is_x:
                     true = X_true
                     pred = X_pred
+                    pred_opt = X_pred_opt
                     pred_by_model = X_pred_by_model
                 else:
                     true = U_true
                     pred = U_pred
+                    pred_opt = U_pred_opt
                     pred_by_model = U_pred_by_model
 
                 plt.plot(timesteps_true, true[i, :, label], label="True value")
@@ -86,6 +90,12 @@ def plot_simulated_control(
                     pred[i, timesteps_pred_index, label],
                     color=plots.tab_colours[1],
                     label="Mean prediction",
+                )
+                plt.plot(
+                    timesteps_pred,
+                    pred_opt[i, timesteps_pred_index, label],
+                    color=plots.tab_colours[2],
+                    label="Mean prediction (opt)",
                 )
 
                 plt.xlabel("Time [s]")

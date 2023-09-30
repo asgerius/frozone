@@ -37,9 +37,10 @@ class FzNetwork(_FloatzoneModule):
         Sf: torch.FloatTensor, *,
         Xf: Optional[torch.FloatTensor] = None,
         Uf: Optional[torch.FloatTensor] = None,
+        zh: Optional[torch.FloatTensor] = None,
     ) -> tuple[tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]], Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
         """ This method implementation does not change anything, but it adds type support for forward calls. """
-        return super().__call__(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
+        return super().__call__(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf, zh=zh)
 
     def forward(
         self,
@@ -49,8 +50,10 @@ class FzNetwork(_FloatzoneModule):
         Sf: torch.FloatTensor, *,
         Xf: Optional[torch.FloatTensor],
         Uf: Optional[torch.FloatTensor],
+        zh: Optional[torch.FloatTensor],
     ) -> tuple[tuple[torch.FloatTensor, Optional[torch.FloatTensor], Optional[torch.FloatTensor]], Optional[torch.FloatTensor], Optional[torch.FloatTensor]]:
-        zh = self.Eh(Xh, Uh, Sh)
+        if zh is None:
+            zh = self.Eh(Xh, Uh, Sh)
         Zu = Zx = Xf_pred = Uf_pred = None
 
         if self.config.has_dynamics and Uf is not None:

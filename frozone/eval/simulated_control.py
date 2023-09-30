@@ -9,17 +9,138 @@ from pelutils import TT, log, thousands_seperators
 from pelutils.parser import Parser
 
 import frozone.environments as environments
-from frozone.data import DatasetSim
 from frozone.data.dataloader import numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork
 from frozone.plot.plot_simulated_control import plot_simulated_control
-from frozone.train import TrainConfig, TrainResults
+from frozone.train import TrainConfig, TrainResults, get_loss_fns
 
 
 warnings.filterwarnings("error")
 
-@torch.inference_mode()
+class ControllerStrategies:
+
+    def __init__(
+        self,
+        models: list[FzNetwork],
+        X_true: np.ndarray,
+        S_true: np.ndarray,
+        train_cfg: TrainConfig,
+        train_results: TrainResults,
+        simulation_cfg: SimulationConfig,
+    ):
+        self.models = models
+        self.X_true = X_true
+        self.S_true = S_true
+        self.X_true_d, self.S_true_d = numpy_to_torch_device(X_true, S_true)
+        self.train_cfg = train_cfg
+        self.train_results = train_results
+        self.simulation_cfg = simulation_cfg
+        self.env = self.train_cfg.get_env()
+
+        self.loss_fn_x, self.loss_fn_u = get_loss_fns(self.env, train_cfg)
+
+    def sequences(self, step: int) -> tuple[int, int, int]:
+        seq_start = step
+        seq_mid = seq_start + self.train_cfg.H
+        seq_end = seq_mid + self.train_cfg.F
+        return seq_start, seq_mid, seq_end
+
+    def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
+        seq_start, seq_mid, seq_end = self.sequences(step)
+
+        for j, model in enumerate(self.models):
+            U[:, j, seq_mid] = model(*numpy_to_torch_device(
+                    X[:, j, seq_start:seq_mid],
+                    U[:, j, seq_start:seq_mid],
+                    S[:, j, seq_start:seq_mid],
+                ),
+                Sf = self.S_true_d[:, seq_mid:seq_end],
+                Xf = self.X_true_d[:, seq_mid:seq_end],
+            )[2][:, 0].cpu().numpy()
+
+            U[:, j, seq_mid] = self.env.limit_control(U[:, j, seq_mid], mean=train_results.mean_u, std=train_results.std_u)
+
+            X[:, j, seq_mid], S[:, j, seq_mid], Z[:, j, seq_mid] = self.env.forward_standardized(
+                X[:, j, seq_mid-1],
+                U[:, j, seq_mid-1],
+                S[:, j, seq_mid-1],
+                Z[:, j, seq_mid-1],
+                train_results,
+            )
+
+    def step_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
+        seq_start, seq_mid, seq_end = self.sequences(step)
+
+        U[:, seq_mid] = 0
+
+        for model in self.models:
+            U[:, seq_mid] += model(*numpy_to_torch_device(
+                    X[:, seq_start:seq_mid],
+                    U[:, seq_start:seq_mid],
+                    S[:, seq_start:seq_mid],
+                ),
+                self.S_true_d[:, seq_mid:seq_end],
+                Xf = self.X_true_d[:, seq_mid:seq_end],
+            )[2][:, 0].cpu().numpy() / train_cfg.num_models
+
+        U[:, seq_mid] = self.env.limit_control(U[:, seq_mid], mean=train_results.mean_u, std=train_results.std_u)
+
+        X[:, seq_mid], S[:, seq_mid], Z[:, seq_mid] = self.env.forward_standardized(
+            X[:, seq_mid-1],
+            U[:, seq_mid-1],
+            S[:, seq_mid-1],
+            Z[:, seq_mid-1],
+            train_results,
+        )
+
+    def step_optimized_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
+        seq_start, seq_mid, seq_end = self.sequences(step)
+
+
+        Xh, Uh, Sh = numpy_to_torch_device(
+            X[:, seq_start:seq_mid],
+            U[:, seq_start:seq_mid],
+            S[:, seq_start:seq_mid],
+        )
+
+        U[:, seq_mid:seq_end] = 0
+
+        for model in self.models:
+            (zh, Zu, Zx), _, Uf = model(
+                Xh, Uh, Sh,
+                Sf = self.S_true_d[:, seq_mid:seq_end],
+                Xf = self.X_true_d[:, seq_mid:seq_end],
+            )
+            Uf.requires_grad_()
+            optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
+
+            for _ in range(self.simulation_cfg.opt_steps):
+                _, Xf, _ = model(
+                    Xh, Uh, Sh,
+                    Sf = self.S_true_d[:, seq_mid:seq_end],
+                    Uf = Uf,
+                    zh = zh,
+                )
+
+                loss = self.loss_fn_x(self.X_true_d[:, seq_mid:seq_end], Xf)
+                loss.backward()
+
+                optimizer.step()
+                optimizer.zero_grad()
+
+            U[:, seq_mid:seq_end] += Uf.detach().cpu().numpy() / self.train_cfg.num_models
+
+        U[:, seq_mid] = self.env.limit_control(U[:, seq_mid], mean=train_results.mean_u, std=train_results.std_u)
+
+        X[:, seq_mid], S[:, seq_mid], Z[:, seq_mid] = self.env.forward_standardized(
+            X[:, seq_mid-1],
+            U[:, seq_mid-1],
+            S[:, seq_mid-1],
+            Z[:, seq_mid-1],
+            train_results,
+        )
+
 def simulated_control(
     path: str,
     env: Type[environments.Environment],
@@ -28,6 +149,8 @@ def simulated_control(
     train_results: TrainResults,
     simulation_cfg: SimulationConfig,
 ):
+    for model in models:
+        model.eval().requires_grad_(False)
 
     log("Simulating data")
     timesteps = train_cfg.H + simulation_cfg.simulation_steps(env) + train_cfg.F
@@ -35,7 +158,7 @@ def simulated_control(
     dataset = [(X, U, S, Z) for X, U, S, Z in zip(X_all, U_all, S_all, Z_all)]
 
     log("Standardizing data")
-    with TT.profile("Load data"):
+    with TT.profile("Standardize"):
         standardize(env, dataset, train_results)
 
     X_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.XLabels)), dtype=env.X_dtype)
@@ -54,54 +177,22 @@ def simulated_control(
     U_pred = U_true.copy()
     S_pred = S_true.copy()
     Z_pred = Z_true.copy()
+    X_pred_opt = X_true.copy()
+    U_pred_opt = U_true.copy()
+    S_pred_opt = S_true.copy()
+    Z_pred_opt = Z_true.copy()
+
+    controller_strategies = ControllerStrategies(models, X_true, S_true, train_cfg, train_results, simulation_cfg)
 
     log("Running simulation")
-    TT.profile("Time step", hits=simulation_cfg.simulation_steps(env))
+    TT.profile("Step", hits=simulation_cfg.simulation_steps(env))
     for i in range(simulation_cfg.simulation_steps(env)):
-        seq_start = i
-        seq_mid = seq_start + train_cfg.H
-        seq_end = seq_mid + train_cfg.F
-
-        U_pred[:, seq_mid] = 0
-
-        for j, model in enumerate(models):
-            # Run for each model individually
-            U_pred_by_model[:, j, seq_mid] = env.limit_control(model(*numpy_to_torch_device(
-                    X_pred_by_model[:, j, seq_start:seq_mid],
-                    U_pred_by_model[:, j, seq_start:seq_mid],
-                    S_pred_by_model[:, j, seq_start:seq_mid],
-                    S_true[:, seq_mid:seq_end],
-                ),
-                Xf = numpy_to_torch_device(X_true[:, seq_mid:seq_end])[0],
-            )[2][:, 0].cpu().numpy(), mean=train_results.mean_u, std=train_results.std_u)
-
-            X_pred_by_model[:, j, seq_mid], S_pred_by_model[:, j, seq_mid], Z_pred_by_model[:, j, seq_mid] = env.forward_standardized(
-                X_pred_by_model[:, j, seq_mid-1],
-                U_pred_by_model[:, j, seq_mid-1],
-                S_pred_by_model[:, j, seq_mid-1],
-                Z_pred_by_model[:, j, seq_mid-1],
-                train_results,
-            )
-
-            # Ensemble prediction
-            U_pred[:, seq_mid] += model(*numpy_to_torch_device(
-                    X_pred[:, seq_start:seq_mid],
-                    U_pred[:, seq_start:seq_mid],
-                    S_pred[:, seq_start:seq_mid],
-                    S_true[:, seq_mid:seq_end],
-                ),
-                Xf = numpy_to_torch_device(X_true[:, seq_mid:seq_end])[0],
-            )[2][:, 0].cpu().numpy() / train_cfg.num_models
-
-        U_pred[:, seq_mid] = env.limit_control(U_pred[:, seq_mid], mean=train_results.mean_u, std=train_results.std_u)
-
-        X_pred[:, seq_mid], S_pred[:, seq_mid], Z_pred[:, seq_mid] = env.forward_standardized(
-            X_pred[:, seq_mid-1],
-            U_pred[:, seq_mid-1],
-            S_pred[:, seq_mid-1],
-            Z_pred[:, seq_mid-1],
-            train_results,
-        )
+        with TT.profile("By model", hits = simulation_cfg.num_samples * train_cfg.num_models):
+            controller_strategies.step_single_model(i, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
+        with TT.profile("Ensemble", hits = simulation_cfg.num_samples):
+            controller_strategies.step_ensemble(i, X_pred, U_pred, S_pred, Z_pred)
+        with TT.profile("Ensemble optimized", hits = simulation_cfg.num_samples):
+            controller_strategies.step_optimized_ensemble(i, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
 
     TT.end_profile()
 
@@ -110,6 +201,8 @@ def simulated_control(
         U_true = U_true * train_results.std_u + train_results.mean_u
         X_pred = X_pred * train_results.std_x + train_results.mean_x
         U_pred = U_pred * train_results.std_u + train_results.mean_u
+        X_pred_opt = X_pred_opt * train_results.std_x + train_results.mean_x
+        U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
         X_pred_by_model = X_pred_by_model * train_results.std_x + train_results.mean_x
         U_pred_by_model = U_pred_by_model * train_results.std_u + train_results.mean_u
 
@@ -125,9 +218,14 @@ def simulated_control(
             U_true = U_true,
             X_pred = X_pred,
             U_pred = U_pred,
+            X_pred_opt = X_pred_opt,
+            U_pred_opt = U_pred_opt,
             X_pred_by_model = X_pred_by_model,
             U_pred_by_model = U_pred_by_model,
         )
+
+    for model in models:
+        model.train().requires_grad_(True)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -140,12 +238,13 @@ if __name__ == "__main__":
 
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
+        train_cfg.num_models = 1
         train_results = TrainResults.load(job.location)
 
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(3, 500 * env.dt)
+        simulation_cfg = SimulationConfig(1, 100 * env.dt, 1, 15, 5e-3)
         simulation_cfg.save(job.location)
 
         log("Loading models")
