@@ -40,7 +40,9 @@ def plot_simulated_control(
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
     timesteps_true = np.arange(X_true.shape[1]) * env.dt
-    timesteps_pred_index = train_cfg.H + np.arange(simulation_cfg.simulation_steps(env))
+    control_interval = simulation_cfg.control_every_steps(env, train_cfg)
+    num_controls = simulation_cfg.simulation_steps(env) // control_interval
+    timesteps_pred_index = train_cfg.H + np.arange(control_interval * num_controls + 1) - 1
     timesteps_pred = timesteps_pred_index * env.dt
 
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
@@ -81,7 +83,7 @@ def plot_simulated_control(
                     plt.plot(
                         timesteps_pred,
                         pred_by_model[i, k, timesteps_pred_index, label],
-                        alpha=0.4,
+                        alpha=0.6,
                         color="grey",
                         label="Individual predictions" if k == 0 else None,
                     )

@@ -4,6 +4,7 @@ from typing import Type
 from pelutils import DataStorage
 
 from frozone.environments import Environment
+from frozone.train import TrainConfig
 
 
 @dataclass
@@ -28,5 +29,5 @@ class SimulationConfig(DataStorage):
     def simulation_steps(self, env: Type[Environment]) -> int:
         return int(self.simulation_length / env.dt)
 
-    def control_every_steps(self, env: Type[Environment]) -> int:
-        return max(int(self.control_every / env.dt), 1)
+    def control_every_steps(self, env: Type[Environment], train_cfg: TrainConfig) -> int:
+        return min(max(int(self.control_every / env.dt), 1), train_cfg.F)
