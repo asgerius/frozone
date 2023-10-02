@@ -152,6 +152,8 @@ def simulated_control(
     train_results: TrainResults,
     simulation_cfg: SimulationConfig,
 ):
+    simulation_cfg.save(path)
+
     for model in models:
         model.eval().requires_grad_(False)
 
@@ -229,6 +231,7 @@ def simulated_control(
         )
 
     for model in models:
+        # FIXME: This break positional embeddings and possibly other stuff
         model.train().requires_grad_(True)
 
 if __name__ == "__main__":
@@ -248,7 +251,6 @@ if __name__ == "__main__":
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
         simulation_cfg = SimulationConfig(3, 200 * env.dt, 1 * env.dt, 5, 5e-3)
-        simulation_cfg.save(job.location)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
