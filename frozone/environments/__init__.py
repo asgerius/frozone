@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 
 
-from frozone.train import TrainResults
+import frozone.train
 
 class Environment(abc.ABC):
 
@@ -127,7 +127,7 @@ class Environment(abc.ABC):
         U: np.ndarray,
         S: np.ndarray,
         Z: np.ndarray,
-        train_results: TrainResults,
+        train_results: frozone.train.TrainResults,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """ Same as forward, but X and U are taken in the standardized domain. The returned X is also standardized. """
         eps = 1e-6
