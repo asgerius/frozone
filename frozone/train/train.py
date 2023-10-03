@@ -209,7 +209,7 @@ def train(job: JobDescription):
                             models,
                             train_cfg,
                             train_results,
-                            SimulationConfig(5, 600 * env.dt, env.dt, 5, 2e-2),
+                            SimulationConfig(5, 600 * env.dt, env.dt, 5 * env.dt, 5, 2e-2),
                         )
 
             for model in models:

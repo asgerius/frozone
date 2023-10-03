@@ -48,17 +48,31 @@ class ControllerStrategies:
         seq_end = seq_mid + self.train_cfg.F
         return seq_start, seq_mid, seq_control, seq_end
 
+    def get_target_Xf(self, Xh: torch.FloatTensor, Xf_ref: torch.FloatTensor) -> torch.FloatTensor:
+        """ Returns the target, which is a linear mix of Xh and self.X_true. """
+        steps = self.simulation_cfg.correction_steps(self.env, self.train_cfg)
+        # 0 For only xH and 1 for X_true
+        step_weight = torch.linspace(0, 1, steps + 1, device=Xh.device)[1:]
+
+        XH = torch.stack([Xh[:, -1]] * steps, dim=-1)
+        X_target = Xf_ref.clone()
+        X_target[:, :steps] = ((1 - step_weight) * XH + step_weight * X_target[:, :steps].permute(0, 2, 1)).permute(0, 2, 1)
+
+        return X_target
+
     def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
         for j, model in enumerate(self.models):
-            U[:, j, seq_mid:seq_control] = model(*numpy_to_torch_device(
-                    X[:, j, seq_start:seq_mid],
-                    U[:, j, seq_start:seq_mid],
-                    S[:, j, seq_start:seq_mid],
-                ),
+            Xh, Uh, Sh = numpy_to_torch_device(
+                X[:, j, seq_start:seq_mid],
+                U[:, j, seq_start:seq_mid],
+                S[:, j, seq_start:seq_mid],
+            )
+            U[:, j, seq_mid:seq_control] = model(
+                Xh, Uh, Sh,
                 Sf = self.S_true_d[:, seq_mid:seq_end],
-                Xf = self.X_true_d[:, seq_mid:seq_end],
+                Xf = self.get_target_Xf(Xh, self.X_true_d[:, seq_mid:seq_end]),
             )[2][:, :self.control_interval].cpu().numpy()
 
             U[:, j, seq_mid] = self.env.limit_control(U[:, j, seq_mid], mean=self.train_results.mean_u, std=self.train_results.std_u)
@@ -76,15 +90,17 @@ class ControllerStrategies:
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
         U[:, seq_mid:seq_control] = 0
+        Xh, Uh, Sh = numpy_to_torch_device(
+            X[:, seq_start:seq_mid],
+            U[:, seq_start:seq_mid],
+            S[:, seq_start:seq_mid],
+        )
 
         for model in self.models:
-            U[:, seq_mid:seq_control] += model(*numpy_to_torch_device(
-                    X[:, seq_start:seq_mid],
-                    U[:, seq_start:seq_mid],
-                    S[:, seq_start:seq_mid],
-                ),
+            U[:, seq_mid:seq_control] += model(
+                Xh, Uh, Sh,
                 self.S_true_d[:, seq_mid:seq_end],
-                Xf = self.X_true_d[:, seq_mid:seq_end],
+                Xf = self.get_target_Xf(Xh, self.X_true_d[:, seq_mid:seq_end]),
             )[2][:, :self.control_interval].cpu().numpy() / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
@@ -101,38 +117,40 @@ class ControllerStrategies:
     def step_optimized_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        Xh, Uh, Sh = numpy_to_torch_device(
-            X[:, seq_start:seq_mid],
-            U[:, seq_start:seq_mid],
-            S[:, seq_start:seq_mid],
-        )
-
         U[:, seq_mid:seq_end] = 0
 
-        for model in self.models:
-            (zh, Zu, Zx), _, Uf = model(
-                Xh, Uh, Sh,
-                Sf = self.S_true_d[:, seq_mid:seq_end],
-                Xf = self.X_true_d[:, seq_mid:seq_end],
+        for i in range(self.simulation_cfg.num_samples):
+
+            Xh, Uh, Sh = numpy_to_torch_device(
+                X[[i], seq_start:seq_mid],
+                U[[i], seq_start:seq_mid],
+                S[[i], seq_start:seq_mid],
             )
-            Uf.requires_grad_()
-            optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
-
-            for _ in range(self.simulation_cfg.opt_steps):
-                _, Xf, _ = model(
+            for model in self.models:
+                target_Xf = self.get_target_Xf(Xh, self.X_true_d[[i], seq_mid:seq_end])
+                (zh, Zu, Zx), _, Uf = model(
                     Xh, Uh, Sh,
-                    Sf = self.S_true_d[:, seq_mid:seq_end],
-                    Uf = Uf,
-                    zh = zh,
+                    Sf = self.S_true_d[[i], seq_mid:seq_end],
+                    Xf = target_Xf,
                 )
+                Uf.requires_grad_()
+                optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
 
-                loss = self.loss_fn_x(self.X_true_d[:, seq_mid:seq_end], Xf)
-                loss.backward()
+                for _ in range(self.simulation_cfg.opt_steps):
+                    _, Xf, _ = model(
+                        Xh, Uh, Sh,
+                        Sf = self.S_true_d[[i], seq_mid:seq_end],
+                        Uf = Uf,
+                        zh = zh,
+                    )
 
-                optimizer.step()
-                optimizer.zero_grad()
+                    loss = self.loss_fn_x(target_Xf, Xf)
+                    loss.backward()
 
-            U[:, seq_mid:seq_end] += Uf.detach().cpu().numpy() / self.train_cfg.num_models
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                U[[i], seq_mid:seq_end] += Uf.detach().cpu().numpy() / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -254,7 +272,7 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(5, 600 * env.dt, 1 * env.dt, 5, 2e-2)
+        simulation_cfg = SimulationConfig(5, 200 * env.dt, 1 * env.dt, 5 * env.dt, 5, 2e-2)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
