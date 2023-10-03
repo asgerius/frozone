@@ -91,13 +91,13 @@ def plot_simulated_control(
                     timesteps_pred,
                     pred[i, timesteps_pred_index, label],
                     color=plots.tab_colours[1],
-                    label="Mean prediction",
+                    label="Ensemble",
                 )
                 plt.plot(
                     timesteps_pred,
                     pred_opt[i, timesteps_pred_index, label],
                     color=plots.tab_colours[2],
-                    label="Mean prediction (opt)",
+                    label="Ensemble (opt)",
                 )
 
                 plt.xlabel("Time [s]")

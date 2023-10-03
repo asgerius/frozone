@@ -13,10 +13,10 @@ from frozone.data.dataloader import Dataset, dataset_size, load_data_files, nump
 from frozone.eval import ForwardConfig
 from frozone.model.floatzone_network import FzNetwork
 from frozone.plot.plot_forward import plot_forward
-from frozone.train import TrainConfig, TrainResults
+from frozone.train import TrainConfig, TrainResults, get_loss_fns
 
 
-@torch.inference_mode()
+# @torch.inference_mode()
 def forward(
     path: str,
     env: Type[environments.Environment],
@@ -26,6 +26,12 @@ def forward(
     train_results: TrainResults,
     forward_cfg: ForwardConfig,
 ):
+
+    for model in models:
+        model.requires_grad_(False)
+
+    loss_fn_x, loss_fn_u = get_loss_fns(env, train_cfg)
+
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
@@ -45,31 +51,68 @@ def forward(
 
     X_pred = np.stack([X_true] * train_cfg.num_models, axis=1)
     U_pred = np.stack([U_true] * train_cfg.num_models, axis=1)
+    U_pred_opt = U_true.copy()
     X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred)
 
     log("Running forward estimation")
     TT.profile("Inference")
-    for i, model in enumerate(models):
-        for j in range(forward_cfg.num_sequences):
-            seq_start = j * sequence_length
-            seq_mid = j * sequence_length + train_cfg.H
-            seq_end = (j + 1) * sequence_length
+    for j in range(forward_cfg.num_sequences):
+        seq_start = j * sequence_length
+        seq_mid = j * sequence_length + train_cfg.H
+        seq_end = (j + 1) * sequence_length
+
+        if model.config.has_dynamics and model.config.has_control:
+            U_pred_opt[:, seq_mid:seq_end] = 0
+
+        for i, model in enumerate(models):
+
             if model.config.has_dynamics:
-                _, X_pred[:, i, seq_mid:seq_end], _ = model(
-                    X_true[:, seq_start:seq_mid],
-                    U_true[:, seq_start:seq_mid],
-                    S_true[:, seq_start:seq_mid],
-                    S_true[:, seq_mid:seq_end],
-                    Uf = U_true[:, seq_mid:seq_end],
-                )
+                with TT.profile("Dynamics"), torch.inference_mode():
+                    (zh, Zu, Zx), X_pred[:, i, seq_mid:seq_end], _ = model(
+                        X_true[:, seq_start:seq_mid],
+                        U_true[:, seq_start:seq_mid],
+                        S_true[:, seq_start:seq_mid],
+                        Sf = S_true[:, seq_mid:seq_end],
+                        Uf = U_true[:, seq_mid:seq_end],
+                    )
+
             if model.config.has_control:
-                _, _, U_pred[:, i, seq_mid:seq_end] = model(
-                    X_true[:, seq_start:seq_mid],
-                    U_true[:, seq_start:seq_mid],
-                    S_true[:, seq_start:seq_mid],
-                    S_true[:, seq_mid:seq_end],
-                    Xf = X_true[:, seq_mid:seq_end],
-                )
+                with TT.profile("Control"), torch.inference_mode():
+                    _, _, U_pred[:, i, seq_mid:seq_end] = model(
+                        X_true[:, seq_start:seq_mid],
+                        U_true[:, seq_start:seq_mid],
+                        S_true[:, seq_start:seq_mid],
+                        Sf = S_true[:, seq_mid:seq_end],
+                        Xf = X_true[:, seq_mid:seq_end],
+                    )
+
+            if model.config.has_dynamics and model.config.has_control:
+                with TT.profile("Optimized"), torch.inference_mode(False):
+
+                    for k in range(forward_cfg.num_samples):
+
+                        Uf = U_pred[[k], i, seq_mid:seq_end].clone()
+                        Uf.requires_grad_()
+                        optimizer = torch.optim.AdamW([Uf], lr=forward_cfg.step_size)
+
+                        for _ in range(forward_cfg.opt_steps):
+                            _, Xf, _ = model(
+                                X_true[[k], seq_start:seq_mid],
+                                U_true[[k], seq_start:seq_mid],
+                                S_true[[k], seq_start:seq_mid],
+                                Sf = S_true[[k], seq_mid:seq_end],
+                                Uf = Uf,
+                                zh = zh[[k]],
+                            )
+
+                            loss = loss_fn_x(X_true[[k], seq_mid:seq_end], Xf)
+                            loss.backward()
+
+                            optimizer.step()
+                            optimizer.zero_grad()
+
+                        U_pred_opt[[k], seq_mid:seq_end] += Uf.detach().cpu().numpy() / train_cfg.num_models
+
     TT.end_profile()
 
     with TT.profile("Unstandardize"):
@@ -77,15 +120,21 @@ def forward(
         U_true = U_true.cpu().numpy() * train_results.std_u + train_results.mean_u
         X_pred = X_pred.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_pred = U_pred.cpu().numpy() * train_results.std_u + train_results.mean_u
+        U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
 
     if not models[0].config.has_dynamics:
         X_pred = None
     if not models[0].config.has_control:
         U_pred = None
+    if not (models[0].config.has_dynamics and models[0].config.has_control):
+        U_pred_opt = None
 
     log("Plotting samples")
     with TT.profile("Plot"):
-        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_pred, U_pred)
+        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_pred, U_pred, U_pred_opt)
+
+    for model in models:
+        model.requires_grad_(True)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -99,7 +148,7 @@ if __name__ == "__main__":
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
-        forward_cfg = ForwardConfig(num_samples=5, num_sequences=2)
+        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3, opt_steps=5, step_size=3e-4)
         forward_cfg.save(job.location)
 
         env = train_cfg.get_env()

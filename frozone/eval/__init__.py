@@ -11,6 +11,8 @@ from frozone.train import TrainConfig
 class ForwardConfig(DataStorage):
     num_samples: int
     num_sequences: int
+    opt_steps: int
+    step_size: float
 
 @dataclass
 class SimulationConfig(DataStorage):

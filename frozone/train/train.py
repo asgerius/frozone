@@ -198,7 +198,7 @@ def train(job: JobDescription):
                         test_dataset,
                         train_cfg,
                         train_results,
-                        ForwardConfig(num_samples=5, num_sequences=3),
+                        ForwardConfig(num_samples=5, num_sequences=3, opt_steps=0, step_size=3e-4),
                     )
 
                 if env.is_simulation:

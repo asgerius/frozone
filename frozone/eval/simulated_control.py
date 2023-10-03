@@ -60,6 +60,7 @@ class ControllerStrategies:
 
         return X_target
 
+    @torch.inference_mode()
     def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
@@ -86,6 +87,7 @@ class ControllerStrategies:
                     self.train_results,
                 )
 
+    @torch.inference_mode()
     def step_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
@@ -114,6 +116,7 @@ class ControllerStrategies:
                 self.train_results,
             )
 
+    @torch.inference_mode(False)
     def step_optimized_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
@@ -127,12 +130,13 @@ class ControllerStrategies:
                 S[[i], seq_start:seq_mid],
             )
             for model in self.models:
-                target_Xf = self.get_target_Xf(Xh, self.X_true_d[[i], seq_mid:seq_end])
-                (zh, Zu, Zx), _, Uf = model(
-                    Xh, Uh, Sh,
-                    Sf = self.S_true_d[[i], seq_mid:seq_end],
-                    Xf = target_Xf,
-                )
+                with torch.inference_mode():
+                    target_Xf = self.get_target_Xf(Xh, self.X_true_d[[i], seq_mid:seq_end])
+                    (zh, Zu, Zx), _, Uf = model(
+                        Xh, Uh, Sh,
+                        Sf = self.S_true_d[[i], seq_mid:seq_end],
+                        Xf = target_Xf,
+                    )
                 Uf.requires_grad_()
                 optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
 
@@ -163,7 +167,6 @@ class ControllerStrategies:
                 self.train_results,
             )
 
-@torch.inference_mode(False)
 def simulated_control(
     path: str,
     env: Type[environments.Environment],

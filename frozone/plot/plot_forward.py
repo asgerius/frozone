@@ -32,6 +32,7 @@ def plot_forward(
     U_true: np.ndarray,
     X_pred: Optional[np.ndarray],
     U_pred: Optional[np.ndarray],
+    U_pred_opt: Optional[np.ndarray],
 ):
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
@@ -63,10 +64,12 @@ def plot_forward(
                 if is_x:
                     true = X_true
                     pred = X_pred
+                    pred_opt = None
                     plot_preds = label not in env.no_reference_variables
                 else:
                     true = U_true
                     pred = U_pred
+                    pred_opt = U_pred_opt
                     plot_preds = True
 
                 plt.plot(timesteps, true[i, :, label], "-o", label="True value")
@@ -88,7 +91,18 @@ def plot_forward(
                             pred[i, :, seq_mid-1:seq_end, label].mean(axis=0),
                             "-o",
                             color=plots.tab_colours[1],
-                            label="Mean prediction" if k == 0 else None,
+                            label="Ensemble" if k == 0 else None,
+                        )
+                if pred_opt is not None:
+                    for k in range(forward_cfg.num_sequences):
+                        seq_mid = k * sequence_length + train_cfg.H
+                        seq_end = (k + 1) * sequence_length
+                        plt.plot(
+                            timesteps[seq_mid-1:seq_end],
+                            pred_opt[i, seq_mid-1:seq_end, label],
+                            "-o",
+                            color=plots.tab_colours[2],
+                            label="Ensemble (opt)" if k == 0 else None,
                         )
 
                 plt.xlabel("Time [s]")
