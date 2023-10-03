@@ -1,8 +1,8 @@
 import os
 import random
 import shutil
-import sys
 import warnings
+from argparse import ArgumentParser
 from typing import Type
 
 import numpy as np
@@ -31,6 +31,12 @@ def generate(path: str, env: Type[environments.Environment], num_simulations: in
         np.savez_compressed(outpath, X=X[i], U=U[i], S=S[i])
 
 if __name__ == "__main__":
-    data_path = sys.argv[1]
-    env: Type[environments.Environment] = getattr(environments, sys.argv[2])
-    generate(data_path, env, 20000, int(200 / env.dt))
+    parser = ArgumentParser()
+    parser.add_argument("data_path")
+    parser.add_argument("-n", "--num_simulations", type=int, default=20000)
+    parser.add_argument("-t", "--time", type=float, default=3600)
+    parser.add_argument("-e", "--env", default="Steuermann")
+    args = parser.parse_args()
+
+    env: Type[environments.Environment] = getattr(environments, args.env)
+    generate(args.data_path, env, args.num_simulations, int(args.time / env.dt))

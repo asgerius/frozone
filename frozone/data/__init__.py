@@ -41,3 +41,7 @@ def list_processed_data_files(data_path: str, train_test_subdir: str, phase: Opt
         path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, phase, "**", "*.npz")
 
     return glob(path, recursive=True)
+
+def squared_exponential_kernel(x: np.ndarray, y: np.ndarray, l: float) -> np.ndarray:
+    d = np.subtract.outer(x, y)
+    return np.exp(-d ** 2 / (2 * l ** 2 + 1e-8))

@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 from tqdm import tqdm
 
+from frozone.data import squared_exponential_kernel
 from frozone.environments import Environment
 from frozone.environments.steuermann_model.framework import simulate
 from frozone.environments.steuermann_model.model.model import f
@@ -40,10 +41,12 @@ class Steuermann(Environment):
 
     no_reference_variables = (XLabels.PolyAngle, )
 
+    _lower = 0.9
+    _upper = 1.1
     control_limits = {
-        ULabels.GeneratorVoltage: (5 * 0.9, 5 * 1.1),
-        ULabels.PolyPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
-        ULabels.CrystalPullRate: (3.8 / 60 * 0.9, 3.8 / 60 * 1.1),
+        ULabels.GeneratorVoltage: (5 * _lower, 5 * _upper),
+        ULabels.PolyPullRate: (3.8 / 60 * _lower, 3.8 / 60 * _upper),
+        ULabels.CrystalPullRate: (3.8 / 60 * _lower, 3.8 / 60 * _upper),
     }
 
     @classmethod
@@ -62,7 +65,7 @@ class Steuermann(Environment):
     @classmethod
     def sample_init_control_vars(cls, n: int) -> np.ndarray:
         U = np.empty((n, len(cls.ULabels)), dtype=cls.U_dtype)
-        U[:, cls.ULabels.GeneratorVoltage] = 5
+        U[:, ] = 5
         U[:, cls.ULabels.PolyPullRate] = 3.8 / 60
         U[:, cls.ULabels.CrystalPullRate] = 3.8 / 60
         return U
@@ -75,8 +78,34 @@ class Steuermann(Environment):
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
 
-        U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
-        U[:, 0] = cls.sample_init_control_vars(n)
+        U_offsets = {
+            cls.ULabels.GeneratorVoltage: 5,
+            cls.ULabels.PolyPullRate: 3.8 / 60,
+            cls.ULabels.CrystalPullRate: 3.8 / 60,
+        }
+        U = np.zeros((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
+        for i in range(n):
+            for ulab, offset in U_offsets.items():
+                if random.random() < 0.5:
+                    # Sometimes, use constant values
+                    U[i, :, ulab] = offset
+                else:
+                    # Other times, generate smooth data from a Gaussian process
+                    num_start = np.random.randint(1, timesteps // 3)
+                    l = np.random.uniform(100, 1000)
+                    xs = np.arange(num_start, timesteps) * cls.dt
+                    x0 = np.array([num_start - 1]) * cls.dt
+
+                    K = squared_exponential_kernel(x0, x0, l)
+                    Ks = squared_exponential_kernel(x0, xs, l)
+                    Kss = squared_exponential_kernel(xs, xs, l)
+
+                    covs = Kss - Ks.T @ np.linalg.pinv(K) @ Ks
+
+                    U[i, :, ulab] = offset
+                    U[i, num_start:, ulab] += 0.04 * offset * np.random.multivariate_normal(np.zeros(len(xs)), covs)
+
+        U = cls.limit_control(U)
 
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
         Z[..., cls.ZLabels.Time] = np.arange(0, timesteps) * cls.dt
@@ -86,16 +115,7 @@ class Steuermann(Environment):
 
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        response_iters = np.random.randint(timesteps // 15, timesteps // 4, n)
-        response_vars = [random.choice(list(cls.ULabels)).value for _ in range(n)]
-        response = np.random.uniform(0.93, 1.05, n)
-
         for i in tqdm(range(timesteps-1)) if with_tqdm else range(timesteps-1):
-            U[:, i + 1] = U[:, 0]
-            for j, response_iter in enumerate(response_iters):
-                if i >= response_iter:
-                    U[j, i + 1, response_vars[j]] *= response[j]
-
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],
                 S[:, i], Z[:, i],

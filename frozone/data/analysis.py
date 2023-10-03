@@ -115,7 +115,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
     for xlabel in env.XLabels:
         with plots.Figure(os.path.join(job.location, _plot_folder + " PHASE=" + job.phase, f"X_{xlabel.name}.png")):
             for X, U, S in dataset:
-                plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], alpha=0.7, lw=0.8)
+                plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], lw=1.2)
             plt.title("X " + xlabel.name)
             plt.xlabel("Time [s]")
             plt.grid()
@@ -124,7 +124,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
     for ulabel in env.ULabels:
         with plots.Figure(os.path.join(job.location, _plot_folder + " PHASE=" + job.phase, f"U_{ulabel.name}.png")):
             for X, U, S in dataset:
-                plt.plot(np.arange(len(U)) * env.dt, U[:, ulabel], alpha=0.7, lw=0.8)
+                plt.plot(np.arange(len(U)) * env.dt, U[:, ulabel], lw=1.2)
             plt.title("U " + ulabel.name)
             plt.xlabel("Time [s]")
             plt.grid()
@@ -144,6 +144,7 @@ if __name__ == "__main__":
         log.section("Analysing processed data")
         analyse_processed_data(job, env)
 
-        log.section("Analysing raw data")
-        with log.level(100):
-            analyse_raw_data(job, env)
+        if isinstance(env, environments.FloatZone):
+            log.section("Analysing raw data")
+            with log.level(100):
+                analyse_raw_data(job, env)
