@@ -84,7 +84,7 @@ class ControllerStrategies:
                 ),
                 self.S_true_d[:, seq_mid:seq_end],
                 Xf = self.X_true_d[:, seq_mid:seq_end],
-            )[2][:, :self.control_interval].cpu().numpy() / train_cfg.num_models
+            )[2][:, :self.control_interval].cpu().numpy() / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -144,6 +144,7 @@ class ControllerStrategies:
                 self.train_results,
             )
 
+@torch.inference_mode(False)
 def simulated_control(
     path: str,
     env: Type[environments.Environment],
