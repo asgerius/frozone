@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from pelutils import TT, log, thousands_seperators
 from pelutils.parser import Parser
+from tqdm import tqdm
 
 import frozone.environments as environments
 from frozone.data.dataloader import numpy_to_torch_device, standardize
@@ -151,7 +152,8 @@ def simulated_control(
     models: list[FzNetwork],
     train_cfg: TrainConfig,
     train_results: TrainResults,
-    simulation_cfg: SimulationConfig,
+    simulation_cfg: SimulationConfig, *,
+    with_tqdm = False,
 ):
     simulation_cfg.save(path)
 
@@ -193,7 +195,8 @@ def simulated_control(
     log("Running simulation")
     TT.profile("Step", hits=simulation_cfg.simulation_steps(env))
     control_interval = simulation_cfg.control_every_steps(env, train_cfg)
-    for i in range(simulation_cfg.simulation_steps(env) // control_interval):
+    r = range(simulation_cfg.simulation_steps(env) // control_interval)
+    for i in tqdm(r) if with_tqdm else r:
         with TT.profile("By model", hits = simulation_cfg.num_samples * train_cfg.num_models):
             controller_strategies.step_single_model(i * control_interval, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
         with TT.profile("Ensemble", hits = simulation_cfg.num_samples):
@@ -251,7 +254,7 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(3, 200 * env.dt, 1 * env.dt, 5, 5e-3)
+        simulation_cfg = SimulationConfig(5, 600 * env.dt, 1 * env.dt, 5, 2e-2)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
@@ -267,6 +270,7 @@ if __name__ == "__main__":
                 train_cfg,
                 train_results,
                 simulation_cfg,
+                with_tqdm=True
             )
 
         log(TT)
