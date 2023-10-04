@@ -20,15 +20,15 @@ PHASES = {
     1: "Inactive",
     2: "All_Ready",
     4: "Preheating",
-    8: "Drop",
+    8: "Drop",  # Automated growth starts here
     16: "Snoevs",
     32: "Vending",
-    64: "Necking",
-    128: "Unused",
-    256: "PreCone",
-    512: "Cone",
-    1024: "Full_Diameter",
-    2048: "Fast_Closing",
+    64: "Necking",  # This is where it is interesting
+    128: "Unused",  # Necking and PreCone can be combined, as the split is artificial
+    256: "PreCone",  # This is where it is also interesting
+    512: "Cone",  # Measurement jump when this phase starts
+    1024: "Full_Diameter",  # Stops being interesting here
+    2048: "Fast_Closing",  # This one or closing
     4096: "Closing",
     8192: "Cooling",
 }
