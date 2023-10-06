@@ -5,15 +5,16 @@ import os
 import random
 import shutil
 import sys
-from collections import defaultdict
 from glob import glob as glob  # glob
+from pprint import pformat
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 from pelutils import split_path, log, thousands_seperators
 from tqdm import tqdm
 
-from frozone.data import Dataset, PHASES, PHASE_ORDER, PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT
+from frozone.data import PHASE_TO_INDEX, DataSequence, PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT
 from frozone.environments import FloatZone
 
 
@@ -55,148 +56,117 @@ BLACKLIST = {
 }
 MACHINES = ("M31", "M32", "M33", "M34", "M35", "M36", "M37", "M38", "M41", "M43", "M52", "M54")
 
-def get_phase_slice(phase_number: int, phase_array: np.ndarray) -> slice | None:
-    phase_list = phase_array.tolist()
-    try:
-        next_phase = PHASE_ORDER[PHASE_ORDER.index(phase_number) + 1]
-        end_index = phase_list.index(next_phase)
-        offset = 1
-        while phase_array[end_index - offset] == phase_number:
-            offset += 1
-        start_index = end_index - offset
-        if not (start_index - 5 < end_index):
-            return
-        slice_ = slice(start_index + 1, end_index - 1)
-        assert np.all(phase_array[slice_] == phase_number), "Not all correct phase in phase array"
-        return slice_
-    except ValueError:
-        # Phase or next phase does not exist, so no slice
-        return
+def get_phase_slices(fname: str, df: pd.DataFrame) -> dict[int, slice]:
+    slices: dict[int, slice] = dict()
 
-def keep_automode_slice(automode: np.ndarray) -> slice:
-    start, stop = None, None
-    for i, is_automode in enumerate(automode):
-        if is_automode and start is None:
-            start = i
-        elif not is_automode and start is not None:
-            stop = i
+    current_phase = df.Growth_State_Act.values[-1]
+    end_index = len(df)
+    for index in range(len(df) - 2, -1, -1):
+        phase = df.Growth_State_Act.values[index]
+        if phase < current_phase:
+            start_index = index + 1
+            slices[current_phase] = slice(start_index, end_index)
+            end_index = index + 1
+            current_phase = phase
+        elif phase > current_phase:
             break
 
-    return slice(start, stop)
+    # Keep only interesting phases
+    from pprint import pprint
+    slices = { phase: slice_ for phase, slice_ in slices.items() if 8 <= phase <= 1024 }
+    if len(slices) < 2:
+        return dict()
 
-def parse_floatzone_df(df: pd.DataFrame, machine: str) -> dict[int, Dataset]:
+    slices.pop(max(slices))
+    assert all(8 <= phase <= 512 for phase in slices), f"{fname}\n{pformat(slices)}"
 
-    # The minimum number of seconds a run should have been going for in order to be included
-    min_seconds = {
-        "Cone": 7000,
-        "Full_Diameter": 7000,
-    }
+    sorted_phases = sorted(slices.keys())
 
-    data = dict()
+    for phase0, phase1 in zip(sorted_phases[:-1], sorted_phases[1:], strict=True):
+        slice0 = slices[phase0]
+        slice1 = slices[phase1]
+        assert slice0.start < slice0.stop, f"{fname}\n{pformat(slices)}"
+        assert slice1.start < slice1.stop, f"{fname}\n{pformat(slices)}"
+        assert slice0.stop == slice1.start, f"{fname}\n{pformat(slices)}"
 
-    for phase_number, phase_name in PHASES.items():
-        if phase_name not in min_seconds:
-            # This case has not yet been considered, and so no data is made to save time
-            continue
+    return slices
 
-        slice = get_phase_slice(phase_number, df.Growth_State_Act.values)
+def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[DataSequence]:
 
-        if slice is None or (slice.stop - slice.start) * 6 < min_seconds[phase_name]:
-            continue
+    # Maps growth state to slice
+    slices = get_phase_slices(fpath, df)
+    if not slices:
+        return
 
-        # df_used = df.iloc[slice]
+    sorted_phases = sorted(slices.keys())
+    sorted_slices = [slices[phase] for phase in sorted_phases]
+    offset = sorted_slices[0].start
+    timesteps = sorted_slices[-1].stop - offset
 
-        # automode = df["Automode_GenVoltage"].values   & df["Automode_PolyPull"].values & \
-        #            df["Automode_CrysPull"].values     & df["Automode_PolyRotation"].values & \
-        #            df["Automode_CrysRotation"].values & df["Automode_CoilPos"].values & \
-        #            df["External_Control"].values
+    X = np.empty((timesteps, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
+    U = np.empty((timesteps, len(FloatZone.ULabels)), dtype=FloatZone.U_dtype)
+    S = np.zeros((timesteps, sum(FloatZone.S_bin_count)), dtype=FloatZone.S_dtype)
 
-        # # Only use data from when automation is active
-        # # Values can be messy outside this range
-        # use_slice = keep_automode_slice(automode)
+    for phase, slice_ in zip(sorted_phases, sorted_slices):
+        slice_data = slice(slice_.start - offset, slice_.stop - offset)
 
-        df_used = df.iloc[slice]
-        n = len(df_used)
-
-        assert (df_used.Growth_State_Act.values == phase_number).all(), "Not all same phase in df slice"
-
-        X = np.empty((n, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
-        U = np.empty((n, len(FloatZone.ULabels)), dtype=FloatZone.U_dtype)
-        S = np.zeros((n, sum(FloatZone.S_bin_count)), dtype=FloatZone.S_dtype)
-
-        X[:, FloatZone.XLabels.PolyDia]    = df_used["PolyDia[mm]"].values
-        X[:, FloatZone.XLabels.CrysDia]    = df_used["CrysDia[mm]"].values
-        X[:, FloatZone.XLabels.UpperZone]  = df_used["UpperZone[mm]"].values
-        X[:, FloatZone.XLabels.LowerZone]  = df_used["LowerZone[mm]"].values
-        X[:, FloatZone.XLabels.FullZone]   = df_used["FullZone[mm]"].values
-        X[:, FloatZone.XLabels.MeltVolume] = df_used["MeltVolume[mm3]"].values
-        X[:, FloatZone.XLabels.PolyAngle]  = df_used["PolyAngle[deg]"].values
-        X[:, FloatZone.XLabels.CrysAngle]  = df_used["CrysAngle[deg]"].values
+        X[slice_data, FloatZone.XLabels.PolyDia]    = df["PolyDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalDia]    = df["CrysDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.UpperZone]  = df["UpperZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.LowerZone]  = df["LowerZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.FullZone]   = df["FullZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.MeltVolume] = df["MeltVolume[mm3]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.PolyAngle]  = df["PolyAngle[deg]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalAngle]  = df["CrysAngle[deg]"].values[slice_]
         # X[:, FloatZone.XLabels.MeltNeck]   = df_used["MeltNeck[mm]"].values
         # X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
         # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
         # X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
 
-        U[:, FloatZone.ULabels.GenVoltage]     = df_used["GenVoltage[kV]"].values
-        U[:, FloatZone.ULabels.PolyPullRate]   = df_used["PolyPullRate[mm/min]"].values
-        U[:, FloatZone.ULabels.CrysPullRate]   = df_used["CrysPullRate[mm/min]"].values
+        U[slice_data, FloatZone.ULabels.GeneratorVoltage]     = df["GenVoltage[kV]"].values[slice_]
+        U[slice_data, FloatZone.ULabels.PolyPullRate]   = df["PolyPullRate[mm/min]"].values[slice_]
+        U[slice_data, FloatZone.ULabels.CrystalPullRate]   = df["CrysPullRate[mm/min]"].values[slice_]
         # U[:, FloatZone.ULabels.PolyRotation]   = df["PolyRotation[rpm]"].values
         # U[:, FloatZone.ULabels.CrysRotation]   = df["CrysRotation[rpm]"].values
         # U[:, FloatZone.ULabels.CoilPosition]   = df["CoilPosition[mm]"].values
 
-        PLC_count = 0 #FloatZone.S_bin_count[FloatZone.SLabels.PLCState]
-        # growth_state_index = {1: 0, 2: 1, 4: 2, 8: 3, 16: 4, 32: 5, 64: 6,
-        #                       256: 7, 512: 8, 1024: 9, 2048: 10, 4096: 11, 8192: 12}
-        # assert len(growth_state_index) == FloatZone.S_bin_count[FloatZone.SLabels.GrowthState]
-        # used_indices = set(growth_state_index.values())
-        # assert all(i in used_indices for i in range(len(growth_state_index)))
-        for i in range(n):
-            # binary_str = f"{df_used['PLC_State_Act'].values[i]:032b}"
-            # plc_is_true = [bool(int(b)) for b in binary_str]
-            # S[i, :PLC_count][plc_is_true] = 1
+        S[slice_data, PHASE_TO_INDEX[phase]] = 1
+        S[slice_data, len(PHASE_TO_INDEX) + MACHINES.index(machine)] = 1
 
-            # S[i, PLC_count+growth_state_index[df["Growth_State_Act"].values[i]]] = 1
-            S[i, PLC_count + MACHINES.index(machine)] = 1
+    assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
+    assert np.isnan(X).sum() == 0, f"{fpath}, NaN for X"
+    assert np.isnan(U).sum() == 0, f"{fpath}, NaN for U"
+    assert np.isnan(S).sum() == 0, f"{fpath}, NaN for S"
 
-        assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
-        assert np.isnan(X).sum() == 0, "NaN for X"
-        assert np.isnan(U).sum() == 0, "NaN for U"
-        assert np.isnan(S).sum() == 0, "NaN for S"
-
-        data[phase_number] = X, U, S
-
-    return data
+    return X, U, S
 
 def process_floatzone_file(args: list[str]) -> str | None:
+    raw_data_path, filepath = args
     with log.collect:
-        try:
-            raw_data_path, filepath = args
-            full_path = os.path.join(raw_data_path, filepath)
-            file_path_components = split_path(filepath)
-            log("Loading %s" % full_path)
-            df = pd.read_csv(full_path, quoting=3, delim_whitespace=True)
-            machine = file_path_components[0]
-            log("Parsing file")
-            data = parse_floatzone_df(df, machine)
-            for phase_number, data_sequence in data.items():
-                train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
-                outpath = os.path.join(
-                    os.path.join(raw_data_path, os.path.pardir),
-                    PROCESSED_SUBDIR,
-                    train_test_subdir,
-                    PHASES[phase_number],
-                    *file_path_components[2:-1],
-                    os.path.splitext(file_path_components[-1])[0],
-                )
-                X, U, S = data_sequence
-                log("Saving file with sequence length %s" % thousands_seperators(len(X)))
-                os.makedirs(os.path.split(outpath)[0], exist_ok=True)
-                np.savez_compressed(outpath, X=X, U=U, S=S)
-        except Exception as e:
-            return filepath + " " + str(e)
+        full_path = os.path.join(raw_data_path, filepath)
+        file_path_components = split_path(filepath)
+        log("Loading %s" % full_path)
+        df = pd.read_csv(full_path, quoting=3, delim_whitespace=True)
+        machine = file_path_components[0]
+        log("Parsing file")
+        data = parse_floatzone_df(filepath, df, machine)
+        if data is not None:
+            X, U, S = data
+            train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
+            outpath = os.path.join(
+                os.path.join(raw_data_path, os.path.pardir),
+                PROCESSED_SUBDIR,
+                train_test_subdir,
+                *file_path_components[2:-1],
+                os.path.splitext(file_path_components[-1])[0],
+            )
+            log("Saving file with sequence length %s" % thousands_seperators(len(X)))
+            os.makedirs(os.path.split(outpath)[0], exist_ok=True)
+            np.savez_compressed(outpath, X=X, U=U, S=S)
 
 def process_floatzone_data(data_path: str, processes=None, max_files=None) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     log.configure(os.path.join(data_path, "process.log"), print_level=None)
+    processes = processes or os.cpu_count()
 
     shutil.rmtree(os.path.join(data_path, PROCESSED_SUBDIR), ignore_errors=True)
 
@@ -205,30 +175,18 @@ def process_floatzone_data(data_path: str, processes=None, max_files=None) -> li
     random.shuffle(raw_files)
     raw_files = raw_files[:max_files]
     n_raw_total = len(raw_files)
-    raw_files = [(raw_data_path, file[len(raw_data_path)+1:]) for file in raw_files if not any(file.endswith(x) for x in BLACKLIST)]
+    args = [(raw_data_path, file[len(raw_data_path)+1:]) for file in raw_files if not any(file.endswith(x) for x in BLACKLIST)]
     if max_files is None:
-        assert 0 < n_raw_total == len(raw_files) + len(BLACKLIST)
+        assert 0 < n_raw_total == len(args) + len(BLACKLIST), f"{n_raw_total} == {len(args)} + {len(BLACKLIST)}"
     else:
-        assert 0 < n_raw_total <= len(raw_files)
+        assert 0 < n_raw_total <= len(args)
 
-    processes = processes or os.cpu_count()
     if processes > 1:
         with mp.Pool(processes=processes) as pool:
-            results = tuple(tqdm(pool.imap(process_floatzone_file, raw_files, chunksize=256), total=len(raw_files)))
+            tuple(tqdm(pool.imap(process_floatzone_file, args, chunksize=256), total=len(args)))
     else:
-        results = list()
-        for raw_file in tqdm(raw_files):
-            result = process_floatzone_file(raw_file)
-            if result:
-                raise RuntimeError(result)
-            results.append(result)
-
-    errors = [error for error in results if error is not None]
-    if errors:
-        print("Errors occured when reading the following %i files" % len(errors))
-        print("\n".join(errors))
-    else:
-        print("No errors occured")
+        for arg in tqdm(args, disable=False):
+            process_floatzone_file(arg)
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

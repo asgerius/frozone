@@ -32,14 +32,11 @@ PHASES = {
     4096: "Closing",
     8192: "Cooling",
 }
-PHASE_ORDER = (1, 2, 4, 8, 16, 32, 64, 256, 512, 1024, 2048, 4096, 8192)
+# Use indices
+PHASE_TO_INDEX = { 8: 0, 16: 1, 32: 2, 64: 3, 256: 4, 512: 5 }
 
-def list_processed_data_files(data_path: str, train_test_subdir: str, phase: Optional[str]) -> list[str]:
-    if phase is None:
-        path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, "**", "*.npz")
-    else:
-        path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, phase, "**", "*.npz")
-
+def list_processed_data_files(data_path: str, train_test_subdir: str) -> list[str]:
+    path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, "**", "*.npz")
     return glob(path, recursive=True)
 
 def squared_exponential_kernel(x: np.ndarray, y: np.ndarray, l: float) -> np.ndarray:
