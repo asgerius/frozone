@@ -1,139 +1,132 @@
-""" Standalone script for analyzing the float-zone data. """
+""" Standalone script for analyzing environment data. """
+import math
 import os
-import random
-from collections import defaultdict, Counter
+import shutil
 from glob import glob as glob  # glob
 from typing import Type
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import pelutils.ds.plots as plots
-from pelutils import log, split_path, thousands_seperators
+from pelutils import log
 from pelutils.parser import Parser, Option, JobDescription
 from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone.data import RAW_SUBDIR, PHASES, TEST_SUBDIR, TRAIN_SUBDIR, list_processed_data_files
+from frozone.data import PHASE_TO_INDEX, PHASES, TEST_SUBDIR, Dataset, list_processed_data_files
 from frozone.data.dataloader import load_data_files
 
 
 _plot_folder = "analysis-plots"
 
-def plot_line_distributions(path: str, num_lines: list[int], num_lines_by_machine: defaultdict[str, list[int]]):
-    num_lines = np.array(num_lines)
-    num_lines = num_lines[num_lines < 15000]
-    with plots.Figure(os.path.join(path, _plot_folder, "line-distributions.png"), figsize=(23, 10)):
-        plt.subplot(121)
-        plt.hist(num_lines, bins=50, density=True)
-        plt.title("Number of lines")
-        plt.xlabel("Number of data lines")
-        plt.ylabel("Probability density")
-        plt.xlim(left=-1000, right=16000)
-        plt.grid()
+def analyse_full_data(job: JobDescription, dataset: Dataset):
 
-        plt.subplot(122)
-        for machine, lines in num_lines_by_machine.items():
-            lines = np.array(lines)
-            lines = lines[lines < 15000]
-            plt.plot(*plots.histogram(lines, bins=15), "-o")
-        plt.title("Number of lines by machine")
-        plt.xlabel("Number of data lines")
-        plt.ylabel("Probability density")
-        plt.xlim(left=-1000, right=16000)
-        plt.grid()
+    env = environments.FloatZone
 
-def plot_phase_distribution(path: str, num_lines_by_phase: defaultdict[int, list[int]]):
-    with plots.Figure(os.path.join(path, _plot_folder, "phase-distributions.png"), legend_fontsize=0.75):
-        for i, phase_number in enumerate(sorted(num_lines_by_phase.keys())):
-            num_lines = np.array(num_lines_by_phase[phase_number])
-            plt.axvline(num_lines.mean(), color=plots.colours[i], lw=2)
-            num_lines = num_lines[num_lines<10000]
-            plt.plot(
-                *plots.histogram(num_lines, bins=25, density=True, ignore_zeros=True),
-                "--o",
-                color=plots.colours[i],
-                label=PHASES[phase_number],
-            )
-        plt.title("Number of data lines by phase")
-        plt.xscale("log")
-        plt.yscale("log")
-        plt.xlabel("Number of lines")
-        plt.ylabel("Frequency")
-        plt.legend(loc=3)
-        plt.grid()
+    with plots.Figure(os.path.join(job.location, _plot_folder, f"phase-dist.png"), figsize=(25, 18)):
+        for phase, phase_index in PHASE_TO_INDEX.items():
+            counts = list()
+            for X, U, S in dataset:
+                is_phase = env.is_phase(phase, S)
+                if c := is_phase.sum():
+                    counts.append(c)
 
-def analyse_raw_data(job: JobDescription, env: Type[environments.Environment]):
+            plt.subplot(2, 3, phase_index + 1)
 
-    raw_files = glob(os.path.join(job.location, RAW_SUBDIR, "**", "*.txt"), recursive=True)
-    random.shuffle(raw_files)
-    raw_files = raw_files[:job.max_files]
+            plt.hist(env.dt * np.array(counts), bins=30)
+            plt.xlabel("Time [s]")
+            plt.ylabel("Count")
+            plt.title(PHASES[phase])
 
-    num_lines = list()
-    num_lines_by_machine = defaultdict(list)
-    num_lines_by_phase = defaultdict(list)
+            plt.grid()
 
-    log.section("Analyzing %s raw data files" % thousands_seperators(len(raw_files)))
-    for raw_file in tqdm(raw_files):
+def analyse_processed_data(job: JobDescription, env: Type[environments.Environment], dataset: Dataset):
 
-        try:
-            df = pd.read_csv(raw_file, quoting=3, delim_whitespace=True)
-        except Exception as e:
-            log.warning("Failed to load %s with the error" % raw_file, e)
+    columns = 4
+    is_floatzone = env is environments.FloatZone
+    rows = math.ceil((len(env.XLabels) + len(env.ULabels) + is_floatzone) / columns)
 
-        path_components = split_path(raw_file)
-        machine = path_components[2]
-        num_lines.append(len(df))
-        num_lines_by_machine[machine].append(len(df))
+    log("Plotting %i samples" % len(dataset))
+    for i, (X, U, S) in enumerate(dataset):
+        with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
+            subplot_no = 0
 
-        try:
-            lines_by_phase = Counter(df.Growth_State_Act.values)
-        except AttributeError:
-            log.warning("No Growth_State_Act in %s" % raw_file)
-            continue
+            for xlabel in env.XLabels:
+                subplot_no += 1
+                plt.subplot(rows, columns, subplot_no)
+                plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=1.5)
+                plt.xlabel("Time [s]")
+                plt.title(env.format_label(xlabel))
+                plt.grid()
 
-        for phase_number, count in lines_by_phase.items():
-            if phase_number not in PHASES:
-                log.warning("Phase number %i encountered in %s" % (phase_number, raw_file))
+            for ulabel in env.ULabels:
+                subplot_no += 1
+                plt.subplot(rows, columns, subplot_no)
+                plt.plot(env.dt * np.arange(len(U)), U[:, ulabel], lw=1.5)
+                plt.xlabel("Time [s]")
+                plt.title(env.format_label(ulabel))
+                plt.grid()
+
+            if is_floatzone:
+                subplot_no += 1
+                plt.subplot(rows, columns, subplot_no)
+                for phase_num, phase_index in PHASE_TO_INDEX.items():
+                    phase_name = PHASES[phase_num]
+                    is_phase = S[:, phase_index] == 1
+                    plt.plot(env.dt * np.where(is_phase)[0], np.full(is_phase.sum(), phase_index), plots.colours[phase_index], lw=4, label=phase_name)
+                plt.xlabel("Time [s]")
+                plt.title("Phase")
+                plt.legend(loc="lower right")
+                plt.grid()
+
+def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
+
+    env = environments.FloatZone
+
+    columns = 4
+    rows = math.ceil((len(env.XLabels) + len(env.ULabels)) / columns)
+
+    log("Plotting %i samples for each phase" % len(dataset))
+
+    for phase in PHASE_TO_INDEX:
+
+        phase_name = PHASES[phase]
+        log("Plotting phase %s" % phase_name)
+
+        plot_folder = os.path.join(job.location, _plot_folder + " " + phase_name)
+        shutil.rmtree(plot_folder, ignore_errors=True)
+
+        for i, (X_full, U_full, S_full) in enumerate(dataset):
+            is_phase = env.is_phase(phase, S_full)
+            if not is_phase.sum():
                 continue
-            num_lines_by_phase[phase_number].append(count)
+            X = X_full[is_phase]
+            U = U_full[is_phase]
 
-    log.section("Plotting")
-    plot_line_distributions(job.location, num_lines, num_lines_by_machine)
-    plot_phase_distribution(job.location, num_lines_by_phase)
+            with plots.Figure(os.path.join(plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
+                subplot_no = 0
 
-def analyse_processed_data(job: JobDescription, env: Type[environments.Environment]):
-    samples = 15
+                for xlabel in env.XLabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(xlabel))
+                    plt.grid()
 
-    log("Loading data")
-    test_data_files = list_processed_data_files(job.location, TEST_SUBDIR, job.phase)
-    random.shuffle(test_data_files)
-    test_data_files = test_data_files[:samples]
-    dataset = load_data_files(test_data_files, None)
+                for ulabel in env.ULabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    plt.plot(np.arange(len(U)) * env.dt, U[:, ulabel], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(ulabel))
+                    plt.grid()
 
-    log("Plotting %i X samples" % len(dataset))
-    for xlabel in env.XLabels:
-        with plots.Figure(os.path.join(job.location, _plot_folder + " PHASE=" + job.phase, f"X_{xlabel.name}.png")):
-            for X, U, S in dataset:
-                plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], lw=1.2)
-            plt.title("X " + xlabel.name)
-            plt.xlabel("Time [s]")
-            plt.grid()
-
-    log("Plotting %i U samples" % len(dataset))
-    for ulabel in env.ULabels:
-        with plots.Figure(os.path.join(job.location, _plot_folder + " PHASE=" + job.phase, f"U_{ulabel.name}.png")):
-            for X, U, S in dataset:
-                plt.plot(np.arange(len(U)) * env.dt, U[:, ulabel], lw=1.2)
-            plt.title("U " + ulabel.name)
-            plt.xlabel("Time [s]")
-            plt.grid()
+                plt.suptitle(phase_name, fontsize="xx-large")
 
 if __name__ == "__main__":
     parser = Parser(
-        Option("max-files", type=int, default=None),
-        Option("phase", default=""),
-        Option("env", default="FloatZone")
+        Option("env", default="FloatZone"),
     )
     job = parser.parse_args()
     env = getattr(environments, job.env)
@@ -141,10 +134,16 @@ if __name__ == "__main__":
     log.configure(os.path.join(job.location, "analysis.log"))
 
     with log.log_errors:
-        log.section("Analysing processed data")
-        analyse_processed_data(job, env)
+        log.section("Loading data")
+        test_data_files = list_processed_data_files(job.location, TEST_SUBDIR)
+        dataset = load_data_files(test_data_files, None, max_num_files=5)
+        full_dataset = load_data_files(test_data_files, None, max_num_files=len(test_data_files))
 
-        if isinstance(env, environments.FloatZone):
-            log.section("Analysing raw data")
-            with log.level(100):
-                analyse_raw_data(job, env)
+        shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
+
+        log.section("Analysing processed data")
+        analyse_processed_data(job, env, dataset)
+        if env is environments.FloatZone:
+            analyse_processed_data_floatzone(job, dataset)
+            log.section("Analysing full dataset")
+            analyse_full_data(job, full_dataset)
