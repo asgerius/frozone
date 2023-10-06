@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import abc
 import enum
+import sys
 from typing import Optional
 
 import numpy as np
 from tqdm import tqdm
 
-
 import frozone.train
+
 
 class Environment(abc.ABC):
 
@@ -39,12 +40,24 @@ class Environment(abc.ABC):
 
     control_limits: dict[ULabels, tuple[float | None, float | None]] = dict()
 
+    units: dict[tuple[str, enum.IntEnum], str] = dict()
+
     def __init_subclass__(cls):
         super().__init_subclass__()
         cls.reference_variables = tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
 
         assert len(cls.SLabels) == len(cls.S_bin_count)
         # assert all(x >= 1 for x in cls.S_bin_count)
+
+    @classmethod
+    def format_label(cls, label: enum.IntEnum):
+        label_class = label.__class__.__name__[0]
+        label_name = label.name
+        unit = cls.units.get((label_class, label))
+        if unit is not None:
+            return f"{label_class} {label_name} [{unit}]"
+        else:
+            return f"{label_class} {label_name}"
 
     @classmethod
     def limit_control(cls, U: np.ndarray, mean: Optional[np.ndarray] = None, std: Optional[np.ndarray] = None) -> np.ndarray:
@@ -97,7 +110,7 @@ class Environment(abc.ABC):
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
         S[:, 0] = cls.sample_init_static_vars(n)
 
-        for i in tqdm(range(timesteps-1)) if with_tqdm else range(timesteps-1):
+        for i in tqdm(range(timesteps-1), file=sys.stdout, disable=not with_tqdm):
             if i == 0:
                 U[:, i] = cls.sample_new_control_vars(
                     X[:, i],
