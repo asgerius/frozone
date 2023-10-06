@@ -60,8 +60,8 @@ def train(job: JobDescription):
     env: Type[environments.Environment] = getattr(environments, train_cfg.env)
     log("Got environment %s" % env.__name__)
 
-    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, train_cfg.phase)
-    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
+    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR)
+    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
     log(
         "Found data files",
         "Train: %s (%.2f %%)" % (thousands_seperators(len(train_npz_files)), 100 * len(train_npz_files) / (len(train_npz_files) + len(test_npz_files))),
@@ -131,7 +131,7 @@ def train(job: JobDescription):
     checkpoint_every = 250
     rare_checkpoint_every = 15
     rare_checkpoint_counter = 1
-    @torch.inference_mode()
+
     def checkpoint(batch_no: int):
         """ Performs checkpoint operations such as saving model progress, plotting, evaluation, etc. """
         nonlocal rare_checkpoint_counter
@@ -161,7 +161,7 @@ def train(job: JobDescription):
                     Xf_pred_mean = torch.zeros_like(Xf)
                     Uf_pred_mean = torch.zeros_like(Uf)
                     for k, model in enumerate(models):
-                        with TT.profile("Forward", hits=train_cfg.num_models), amp_context():
+                        with torch.inference_mode(), TT.profile("Forward", hits=train_cfg.num_models), amp_context():
                             _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
                         Xf_pred_mean += Xf_pred if Xf_pred is not None else 0
                         Uf_pred_mean += Uf_pred if Uf_pred is not None else 0
@@ -209,7 +209,7 @@ def train(job: JobDescription):
                             models,
                             train_cfg,
                             train_results,
-                            SimulationConfig(5, 600 * env.dt, env.dt, 5 * env.dt, 5, 2e-2),
+                            SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2),
                         )
 
             for model in models:
