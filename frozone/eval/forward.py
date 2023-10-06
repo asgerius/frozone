@@ -16,7 +16,6 @@ from frozone.plot.plot_forward import plot_forward
 from frozone.train import TrainConfig, TrainResults, get_loss_fns
 
 
-# @torch.inference_mode()
 def forward(
     path: str,
     env: Type[environments.Environment],
@@ -44,7 +43,7 @@ def forward(
     U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
     S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
     for i, (X, U, S) in enumerate(dataset[:forward_cfg.num_samples]):
-        start_index = np.random.randint(0, len(X) - timesteps)
+        start_index = 0  # np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]
         U_true[i] = U[start_index : start_index + timesteps]
         S_true[i] = S[start_index : start_index + timesteps]
@@ -159,7 +158,7 @@ if __name__ == "__main__":
 
         log("Loading data")
         with TT.profile("Load data"):
-            test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, train_cfg.phase)
+            test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
             test_dataset = load_data_files(test_npz_files, train_cfg, max_num_files = 2 * forward_cfg.num_samples)
             log(
                 "Loaded dataset",
