@@ -44,7 +44,7 @@ def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
 
     sys = System()
 
-    x_pred = rungekutta(t0, t1, (t1 - t0) / 20, f, x=x, u=u, **kwargs)
+    x_pred = rungekutta(t0, t1, (t1 - t0) / 8, f, x=x, u=u, **kwargs)
 
     sys.set_within_limits(x_pred)
 
