@@ -1,7 +1,6 @@
 import math
 import os
 import shutil
-import warnings
 from typing import Optional, Type
 
 import matplotlib
@@ -13,8 +12,6 @@ from frozone.environments import Environment
 from frozone.eval import SimulationConfig
 from frozone.train import TrainConfig, TrainResults
 
-
-warnings.filterwarnings("error")
 
 # Use a non-gui backend. For God knows what reason, using the default TkAgg GUI based backend
 # completely breaks when having an asynchronous data loader.
@@ -78,41 +75,44 @@ def plot_simulated_control(
                     pred_opt = U_pred_opt
                     pred_by_model = U_pred_by_model
 
-                plt.plot(timesteps_true, true[i, :, label], label="True value")
+                plt.plot(timesteps_true, true[i, :, label], lw=1.2, label="True value")
                 for k in range(train_cfg.num_models):
                     plt.plot(
                         timesteps_pred,
                         pred_by_model[i, k, timesteps_pred_index, label],
-                        alpha=0.6,
+                        alpha=0.8,
+                        lw=1.2,
                         color="grey",
                         label="Individual predictions" if k == 0 else None,
                     )
                 plt.plot(
                     timesteps_pred,
                     pred[i, timesteps_pred_index, label],
+                    lw=1.2,
                     color=plots.tab_colours[1],
                     label="Ensemble",
                 )
                 plt.plot(
                     timesteps_pred,
                     pred_opt[i, timesteps_pred_index, label],
+                    lw=1.2,
                     color=plots.tab_colours[2],
                     label="Ensemble (opt)",
                 )
 
                 plt.xlabel("Time [s]")
-                plt.ylabel(label.name)
+                plt.ylabel(env.format_label(label))
                 plt.legend()
 
-                margin = 0.4
-                true_min = true[i, :, label].min()
-                true_max = true[i, :, label].max()
-                try:
-                    plt.ylim(
-                        bottom = true_min - margin * (true_max - true_min),
-                        top = true_max + margin * (true_max - true_min),
-                    )
-                except UserWarning:
-                    pass
+                # margin = 0.4
+                # true_min = true[i, :, label].min()
+                # true_max = true[i, :, label].max()
+                # try:
+                #     plt.ylim(
+                #         bottom = true_min - margin * (true_max - true_min),
+                #         top = true_max + margin * (true_max - true_min),
+                #     )
+                # except UserWarning:
+                #     pass
 
                 plt.grid()
