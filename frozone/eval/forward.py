@@ -8,6 +8,7 @@ from pelutils import TT, log, thousands_seperators
 from pelutils.parser import Parser
 
 import frozone.environments as environments
+from frozone import cuda_sync
 from frozone.data import TEST_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import Dataset, dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import ForwardConfig
@@ -19,15 +20,16 @@ from frozone.train import TrainConfig, TrainResults, get_loss_fns
 def forward(
     path: str,
     env: Type[environments.Environment],
-    models: list[FzNetwork],
+    models: list[tuple[FzNetwork, FzNetwork]],
     dataset: Dataset,
     train_cfg: TrainConfig,
     train_results: TrainResults,
     forward_cfg: ForwardConfig,
 ):
 
-    for model in models:
-        model.requires_grad_(False)
+    for dm, cm in models:
+        dm.requires_grad_(False)
+        cm.requires_grad_(False)
 
     loss_fn_x, loss_fn_u = get_loss_fns(env, train_cfg)
 
@@ -60,57 +62,56 @@ def forward(
         seq_mid = j * sequence_length + train_cfg.H
         seq_end = (j + 1) * sequence_length
 
-        if model.config.has_dynamics and model.config.has_control:
-            U_pred_opt[:, seq_mid:seq_end] = 0
+        U_pred_opt[:, seq_mid:seq_end] = 0
 
-        for i, model in enumerate(models):
+        for i, (dynamics_model, control_model) in enumerate(models):
 
-            if model.config.has_dynamics:
-                with TT.profile("Dynamics"), torch.inference_mode():
-                    (zh, Zu, Zx), X_pred[:, i, seq_mid:seq_end], _ = model(
-                        X_true[:, seq_start:seq_mid],
-                        U_true[:, seq_start:seq_mid],
-                        S_true[:, seq_start:seq_mid],
-                        Sf = S_true[:, seq_mid:seq_end],
-                        Uf = U_true[:, seq_mid:seq_end],
-                    )
+            with TT.profile("Dynamics"), torch.inference_mode():
+                X_pred[:, i, seq_mid:seq_end] = dynamics_model(
+                    X_true[:, seq_start:seq_mid],
+                    U_true[:, seq_start:seq_mid],
+                    S_true[:, seq_start:seq_mid],
+                    Sf = S_true[:, seq_mid:seq_end],
+                    Uf = U_true[:, seq_mid:seq_end],
+                )
+                cuda_sync()
 
-            if model.config.has_control:
-                with TT.profile("Control"), torch.inference_mode():
-                    _, _, U_pred[:, i, seq_mid:seq_end] = model(
-                        X_true[:, seq_start:seq_mid],
-                        U_true[:, seq_start:seq_mid],
-                        S_true[:, seq_start:seq_mid],
-                        Sf = S_true[:, seq_mid:seq_end],
-                        Xf = X_true[:, seq_mid:seq_end],
-                    )
+            with TT.profile("Control"), torch.inference_mode():
+                U_pred[:, i, seq_mid:seq_end] = control_model(
+                    X_true[:, seq_start:seq_mid],
+                    U_true[:, seq_start:seq_mid],
+                    S_true[:, seq_start:seq_mid],
+                    Sf = S_true[:, seq_mid:seq_end],
+                    Xf = X_true[:, seq_mid:seq_end],
+                )
+                cuda_sync()
 
-            if model.config.has_dynamics and model.config.has_control:
-                with TT.profile("Optimized"), torch.inference_mode(False):
+            with TT.profile("Optimized"), torch.inference_mode(False):
 
-                    for k in range(forward_cfg.num_samples):
+                for k in range(forward_cfg.num_samples):
 
-                        Uf = U_pred[[k], i, seq_mid:seq_end].clone()
-                        Uf.requires_grad_()
-                        optimizer = torch.optim.AdamW([Uf], lr=forward_cfg.step_size)
+                    Uf = U_pred[[k], i, seq_mid:seq_end].clone()
+                    Uf.requires_grad_()
+                    optimizer = torch.optim.AdamW([Uf], lr=forward_cfg.step_size)
 
-                        for _ in range(forward_cfg.opt_steps):
-                            _, Xf, _ = model(
-                                X_true[[k], seq_start:seq_mid],
-                                U_true[[k], seq_start:seq_mid],
-                                S_true[[k], seq_start:seq_mid],
-                                Sf = S_true[[k], seq_mid:seq_end],
-                                Uf = Uf,
-                                zh = zh[[k]],
-                            )
+                    for _ in range(forward_cfg.opt_steps):
+                        Xf = dynamics_model(
+                            X_true[[k], seq_start:seq_mid],
+                            U_true[[k], seq_start:seq_mid],
+                            S_true[[k], seq_start:seq_mid],
+                            Sf = S_true[[k], seq_mid:seq_end],
+                            Uf = Uf,
+                        )
 
-                            loss = loss_fn_x(X_true[[k], seq_mid:seq_end], Xf)
-                            loss.backward()
+                        loss = loss_fn_x(X_true[[k], seq_mid:seq_end], Xf)
+                        loss.backward()
 
-                            optimizer.step()
-                            optimizer.zero_grad()
+                        optimizer.step()
+                        optimizer.zero_grad()
 
-                        U_pred_opt[[k], seq_mid:seq_end] += Uf.detach().cpu().numpy() / train_cfg.num_models
+                    U_pred_opt[[k], seq_mid:seq_end] += Uf.detach().cpu().numpy() / train_cfg.num_models
+
+                cuda_sync()
 
     TT.end_profile()
 
@@ -121,19 +122,13 @@ def forward(
         U_pred = U_pred.cpu().numpy() * train_results.std_u + train_results.mean_u
         U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
 
-    if not models[0].config.has_dynamics:
-        X_pred = None
-    if not models[0].config.has_control:
-        U_pred = None
-    if not (models[0].config.has_dynamics and models[0].config.has_control):
-        U_pred_opt = None
-
     log("Plotting samples")
     with TT.profile("Plot"):
         plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_pred, U_pred, U_pred_opt)
 
-    for model in models:
-        model.requires_grad_(True)
+    for dm, cm in models:
+        dm.requires_grad_(True)
+        cm.requires_grad_(True)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -147,14 +142,17 @@ if __name__ == "__main__":
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
-        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3, opt_steps=5, step_size=3e-4)
+        forward_cfg = ForwardConfig(num_samples=5, num_sequences=1, opt_steps=5, step_size=1e-2)
         forward_cfg.save(job.location)
 
         env = train_cfg.get_env()
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
-            models = [FzNetwork.load(job.location, i).eval() for i in range(train_cfg.num_models)]
+            models = [FzNetwork.load(job.location, i) for i in range(train_cfg.num_models)]
+            for dm, cm in models:
+                dm.eval()
+                cm.eval()
 
         log("Loading data")
         with TT.profile("Load data"):

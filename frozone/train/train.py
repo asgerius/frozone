@@ -7,7 +7,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
-from frozone import device, amp_context
+from frozone import device, amp_context, cuda_sync
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
@@ -18,10 +18,6 @@ from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults, get_loss_fns
 
-
-def cuda_sync():
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
 
 def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
     return lr_scheduler.OneCycleLR(
@@ -49,7 +45,6 @@ def train(job: JobDescription):
         eval_size = job.eval_size,
         loss_fn = job.loss_fn,
         huber_delta = job.huber_delta,
-        alpha = job.alpha,
         epsilon = job.epsilon,
         augment_prob = job.augment_prob,
     )
@@ -87,42 +82,56 @@ def train(job: JobDescription):
     test_dataloader = dataloader(env, train_cfg, test_dataset)
 
     log("Building %i models" % train_cfg.num_models)
-    models: list[FzNetwork] = list()
-    optimizers: list[torch.optim.Optimizer] = list()
-    schedulers: list[lr_scheduler.LRScheduler] = list()
+    models: list[tuple[FzNetwork, FzNetwork]] = list()
+    optimizers: list[tuple[torch.optim.Optimizer, torch.optim.Optimizer]] = list()
+    schedulers: list[tuple[lr_scheduler.LRScheduler, lr_scheduler.LRScheduler]] = list()
+
+    model_config = FzConfig(
+        dx = len(env.XLabels),
+        du = len(env.ULabels),
+        dz = job.dz,
+        ds = sum(env.S_bin_count),
+        H = train_cfg.H,
+        F = train_cfg.F,
+        encoder_name = job.encoder_name,
+        decoder_name = job.decoder_name,
+        fc_layer_num = job.fc_layer_num,
+        fc_layer_size = job.fc_layer_size,
+        t_layer_num = job.t_layer_num,
+        t_nhead = job.t_nhead,
+        t_d_feedforward = job.t_d_feedforward,
+        dropout = job.dropout,
+        activation_fn = job.activation_fn,
+    )
+    log("Got model configuration", model_config)
+
     for i in range(train_cfg.num_models):
-        model = FzNetwork(FzConfig(
-            dx = len(env.XLabels),
-            du = len(env.ULabels),
-            dz = job.dz,
-            ds = sum(env.S_bin_count),
-            H = train_cfg.H,
-            F = train_cfg.F,
-            encoder_name = job.encoder_name,
-            decoder_name = job.decoder_name,
-            mode = 0 if 0 < train_cfg.alpha < 1 else 1 if train_cfg.alpha == 0 else 2,
-            fc_layer_num = job.fc_layer_num,
-            fc_layer_size = job.fc_layer_size,
-            t_layer_num = job.t_layer_num,
-            t_nhead = job.t_nhead,
-            t_d_feedforward = job.t_d_feedforward,
-            dropout = job.dropout,
-            activation_fn = job.activation_fn,
-        )).to(device)
-        models.append(model)
-        optimizers.append(torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, foreach=True))
-        schedulers.append(build_lr_scheduler(train_cfg, optimizers[-1]))
+        dynamics_model = FzNetwork(model_config, for_control=False).to(device)
+        control_model = FzNetwork(model_config, for_control=True).to(device)
+
+        models.append((dynamics_model, control_model))
+        optimizers.append((
+            torch.optim.AdamW(dynamics_model.parameters(), lr=train_cfg.lr),
+            torch.optim.AdamW(control_model.parameters(), lr=train_cfg.lr),
+        ))
+        schedulers.append((
+            build_lr_scheduler(train_cfg, optimizers[-1][0]),
+            build_lr_scheduler(train_cfg, optimizers[-1][1]),
+        ))
+
         if i == 0:
-            log("Got model configuration", model.config)
-            log.debug("Built model", model)
+            log.debug("Built models", dynamics_model, control_model)
             log(
-                "Number of model parameters",
-                "History encoder:  %s" % thousands_seperators(model.Eh.numel()),
-                "Future encoder X: %s" % thousands_seperators(model.Ex.numel() if model.config.has_control else 0),
-                "Future encoder U: %s" % thousands_seperators(model.Eu.numel() if model.config.has_dynamics else 0),
-                "Decoder X:        %s" % thousands_seperators(model.Dx.numel() if model.config.has_dynamics else 0),
-                "Decoder U:        %s" % thousands_seperators(model.Du.numel() if model.config.has_control else 0),
-                "Total:            %s" % thousands_seperators(model.numel()),
+                "Number of dynamics model parameters",
+                "Encoder (H): %s" % thousands_seperators(dynamics_model.Eh.numel()),
+                "Encoder (F): %s" % thousands_seperators(dynamics_model.Ef.numel()),
+                "Decoder:     %s" % thousands_seperators(dynamics_model.D.numel()),
+                "Total:       %s" % thousands_seperators(dynamics_model.numel()),
+                "Number of control model parameters",
+                "Encoder (H): %s" % thousands_seperators(control_model.Eh.numel()),
+                "Encoder (F): %s" % thousands_seperators(control_model.Ef.numel()),
+                "Decoder:     %s" % thousands_seperators(control_model.D.numel()),
+                "Total:       %s" % thousands_seperators(control_model.numel()),
             )
 
     loss_fn_x, loss_fn_u = get_loss_fns(env, train_cfg)
@@ -144,50 +153,44 @@ def train(job: JobDescription):
         with TT.profile("Checkpoint"):
 
             # Evaluate
-            for model in models:
-                model.eval()
+            for dynamics_model, control_model in models:
+                dynamics_model.eval()
+                control_model.eval()
 
             with TT.profile("Evalutate"):
                 test_loss_x = np.empty((train_cfg.num_eval_batches, train_cfg.num_models))
                 test_loss_u = np.empty((train_cfg.num_eval_batches, train_cfg.num_models))
-                test_loss = np.empty((train_cfg.num_eval_batches, train_cfg.num_models))
 
                 ensemble_loss_x = np.empty(train_cfg.num_eval_batches)
                 ensemble_loss_u = np.empty(train_cfg.num_eval_batches)
-                ensemble_loss = np.empty(train_cfg.num_eval_batches)
 
                 for j in range(train_cfg.num_eval_batches):
                     Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
                     Xf_pred_mean = torch.zeros_like(Xf)
                     Uf_pred_mean = torch.zeros_like(Uf)
-                    for k, model in enumerate(models):
+                    for k, (dynamics_model, control_model) in enumerate(models):
                         with torch.inference_mode(), TT.profile("Forward", hits=train_cfg.num_models), amp_context():
-                            _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
-                        Xf_pred_mean += Xf_pred if Xf_pred is not None else 0
-                        Uf_pred_mean += Uf_pred if Uf_pred is not None else 0
-                        test_loss_x[j, k] = loss_fn_x(Xf, Xf_pred).item() if Xf_pred is not None else torch.tensor(0)
-                        test_loss_u[j, k] = loss_fn_u(Uf, Uf_pred).item() if Uf_pred is not None else torch.tensor(0)
-                        test_loss[j, k] = (1 - train_cfg.alpha) * test_loss_x[j, k] + train_cfg.alpha * test_loss_u[j, k]
-                        assert not np.isnan(test_loss[j, k]), "Found nan loss for model %i" % k
+                            Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
+                            Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf)
+                        Xf_pred_mean += Xf_pred
+                        Uf_pred_mean += Uf_pred
+                        test_loss_x[j, k] = loss_fn_x(Xf, Xf_pred).item()
+                        test_loss_u[j, k] = loss_fn_u(Uf, Uf_pred).item()
 
                     Xf_pred_mean /= train_cfg.num_models
                     Uf_pred_mean /= train_cfg.num_models
 
-                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item() if models[0].config.has_dynamics else torch.tensor(0)
-                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item() if models[0].config.has_control else torch.tensor(0)
-                    ensemble_loss[j] = (1 - train_cfg.alpha) * ensemble_loss_x[j] + train_cfg.alpha * ensemble_loss_u[j]
+                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item()
+                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item()
 
                 for k in range(train_cfg.num_models):
                     train_results.test_loss_x[k].append(test_loss_x[:, k].mean())
                     train_results.test_loss_u[k].append(test_loss_u[:, k].mean())
-                    train_results.test_loss[k].append(test_loss[:, k].mean())
                     train_results.test_loss_x_std[k].append(test_loss_x[:, k].std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
                     train_results.test_loss_u_std[k].append(test_loss_u[:, k].std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
-                    train_results.test_loss_std[k].append(test_loss[:, k].std(ddof=1) * math.sqrt(train_cfg.num_eval_batches))
 
                 train_results.ensemble_loss_x.append(ensemble_loss_x.mean())
                 train_results.ensemble_loss_u.append(ensemble_loss_u.mean())
-                train_results.ensemble_loss.append(ensemble_loss.mean())
 
             if batch_no == train_cfg.batches:
                 with TT.profile("Forward evalutation"):
@@ -198,7 +201,7 @@ def train(job: JobDescription):
                         test_dataset,
                         train_cfg,
                         train_results,
-                        ForwardConfig(num_samples=5, num_sequences=3, opt_steps=0, step_size=3e-4),
+                        ForwardConfig(num_samples=5, num_sequences=1, opt_steps=0, step_size=3e-4),
                     )
 
                 if env.is_simulation:
@@ -212,16 +215,15 @@ def train(job: JobDescription):
                             SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2),
                         )
 
-            for model in models:
-                model.train()
+            for dynamics_model, control_model in models:
+                dynamics_model.train()
+                control_model.train()
 
             log(
                 "Mean test loss X: %.6f" % np.array(train_results.test_loss_x)[:, -1].mean(),
                 "Mean test loss U: %.6f" % np.array(train_results.test_loss_u)[:, -1].mean(),
-                "Mean test loss:   %.6f" % np.array(train_results.test_loss)[:, -1].mean(),
                 "Ensemble loss X:  %.6f" % train_results.ensemble_loss_x[-1],
                 "Ensemble loss U:  %.6f" % train_results.ensemble_loss_u[-1],
-                "Ensemble loss:    %.6f" % train_results.ensemble_loss[-1],
             )
 
             # Plot training stuff
@@ -235,7 +237,8 @@ def train(job: JobDescription):
             train_cfg.save(job.location)
             train_results.save(job.location)
             for i in range(train_cfg.num_models):
-                models[i].save(job.location, i)
+                models[i][0].save(job.location, i)
+                models[i][1].save(job.location, i)
 
         if is_rare_checkpoint:
             log("Training time distribution", TT)
@@ -263,38 +266,45 @@ def train(job: JobDescription):
 
         TT.profile("Batch")
 
-        train_results.lr.append(schedulers[0].get_last_lr())
+        train_results.lr.append(schedulers[0][0].get_last_lr())
 
         for j in range(train_cfg.num_models):
-            model = models[j]
-            optimizer = optimizers[j]
-            scheduler = schedulers[j]
+            dynamics_model, control_model = models[j]
+            dynamics_optimizer, control_optimizer = optimizers[j]
+            dynamics_scheduler, control_scheduler = schedulers[j]
 
             with TT.profile("Get data"):
                 Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
             with TT.profile("Forward"), amp_context():
-                _, Xf_pred, Uf_pred = model(Xh, Uh, Sh, Sf, Xf=Xf, Uf=Uf)
-                loss_x = loss_fn_x(Xf, Xf_pred) if Xf_pred is not None else torch.tensor(0)
-                loss_u = loss_fn_u(Uf, Uf_pred) if Uf_pred is not None else torch.tensor(0)
-                loss = (1 - train_cfg.alpha) * loss_x + train_cfg.alpha * loss_u
-                assert not torch.isnan(loss).isnan().any(), "NaN training loss for model %i" % j
-                train_results.train_loss_x[j].append(loss_x.item())
-                train_results.train_loss_u[j].append(loss_u.item())
-                train_results.train_loss[j].append(loss.item())
+                Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
+                Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf)
+                loss_x = loss_fn_x(Xf, Xf_pred)
+                loss_u = loss_fn_u(Uf, Uf_pred)
                 cuda_sync()
 
+            train_results.train_loss_x[j].append(loss_x.item())
+            train_results.train_loss_u[j].append(loss_u.item())
+
             with TT.profile("Backward"):
-                loss.backward()
+                loss_x.backward()
+                loss_u.backward()
                 cuda_sync()
 
             with TT.profile("Step"):
-                optimizer.step()
-                optimizer.zero_grad()
-                scheduler.step()
+                dynamics_optimizer.step()
+                dynamics_optimizer.zero_grad()
+                dynamics_scheduler.step()
+
+                control_optimizer.step()
+                control_optimizer.zero_grad()
+                control_scheduler.step()
                 cuda_sync()
 
         if do_log:
-            log.debug("Loss: %.6f" % (sum(train_results.train_loss[j][-1] for j in range(train_cfg.num_models)) / train_cfg.num_models))
+            log.debug(
+                "Loss X: %.6f" % (sum(train_results.train_loss_x[j][-1] for j in range(train_cfg.num_models)) / train_cfg.num_models),
+                "Loss U: %.6f" % (sum(train_results.train_loss_u[j][-1] for j in range(train_cfg.num_models)) / train_cfg.num_models),
+            )
 
         TT.end_profile()
 

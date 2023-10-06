@@ -20,7 +20,7 @@ class ControllerStrategies:
 
     def __init__(
         self,
-        models: list[FzNetwork],
+        models: list[tuple[FzNetwork, FzNetwork]],
         X_true: np.ndarray,
         S_true: np.ndarray,
         train_cfg: TrainConfig,
@@ -61,17 +61,17 @@ class ControllerStrategies:
     def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        for j, model in enumerate(self.models):
+        for j, (dynamics_model, control_model) in enumerate(self.models):
             Xh, Uh, Sh = numpy_to_torch_device(
                 X[:, j, seq_start:seq_mid],
                 U[:, j, seq_start:seq_mid],
                 S[:, j, seq_start:seq_mid],
             )
-            U[:, j, seq_mid:seq_control] = model(
+            U[:, j, seq_mid:seq_control] = control_model(
                 Xh, Uh, Sh,
                 Sf = self.S_true_d[:, seq_mid:seq_end],
                 Xf = self.get_target_Xf(Xh, self.X_true_d[:, seq_mid:seq_end]),
-            )[2][:, :self.control_interval].cpu().numpy()
+            )[:, :self.control_interval].cpu().numpy()
 
             U[:, j, seq_mid] = self.env.limit_control(U[:, j, seq_mid], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -95,12 +95,12 @@ class ControllerStrategies:
             S[:, seq_start:seq_mid],
         )
 
-        for model in self.models:
-            U[:, seq_mid:seq_control] += model(
+        for dynamics_model, control_model in self.models:
+            U[:, seq_mid:seq_control] += control_model(
                 Xh, Uh, Sh,
                 self.S_true_d[:, seq_mid:seq_end],
                 Xf = self.get_target_Xf(Xh, self.X_true_d[:, seq_mid:seq_end]),
-            )[2][:, :self.control_interval].cpu().numpy() / self.train_cfg.num_models
+            )[:, :self.control_interval].cpu().numpy() / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -126,10 +126,10 @@ class ControllerStrategies:
                 U[[i], seq_start:seq_mid],
                 S[[i], seq_start:seq_mid],
             )
-            for model in self.models:
+            for dynamics_model, control_model in self.models:
                 with torch.no_grad():
                     target_Xf = self.get_target_Xf(Xh, self.X_true_d[[i], seq_mid:seq_end])
-                    (zh, Zu, Zx), _, Uf = model(
+                    Uf = control_model(
                         Xh, Uh, Sh,
                         Sf = self.S_true_d[[i], seq_mid:seq_end],
                         Xf = target_Xf,
@@ -138,11 +138,10 @@ class ControllerStrategies:
                 optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
 
                 for _ in range(self.simulation_cfg.opt_steps):
-                    _, Xf, _ = model(
+                    Xf = dynamics_model(
                         Xh, Uh, Sh,
                         Sf = self.S_true_d[[i], seq_mid:seq_end],
                         Uf = Uf,
-                        zh = zh,
                     )
 
                     loss = self.loss_fn_x(target_Xf, Xf)
@@ -167,7 +166,7 @@ class ControllerStrategies:
 def simulated_control(
     path: str,
     env: Type[environments.Environment],
-    models: list[FzNetwork],
+    models: list[tuple[FzNetwork, FzNetwork]],
     train_cfg: TrainConfig,
     train_results: TrainResults,
     simulation_cfg: SimulationConfig, *,
@@ -175,8 +174,9 @@ def simulated_control(
 ):
     simulation_cfg.save(path)
 
-    for model in models:
-        model.eval().requires_grad_(False)
+    for dm, cm in models:
+        dm.eval().requires_grad_(False)
+        cm.eval().requires_grad_(False)
 
     log("Simulating data")
     timesteps = train_cfg.H + simulation_cfg.simulation_steps(env) + train_cfg.F - simulation_cfg.control_every_steps(env, train_cfg)
@@ -252,9 +252,9 @@ def simulated_control(
             U_pred_by_model = U_pred_by_model,
         )
 
-    for model in models:
-        # FIXME: This break positional embeddings and possibly other stuff
-        model.train().requires_grad_(True)
+    for dm, cm in models:
+        dm.train().requires_grad_(True)
+        cm.train().requires_grad_(True)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -272,12 +272,11 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(10, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2)
+        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
-            models = [FzNetwork.load(job.location, i).eval() for i in range(train_cfg.num_models)]
-            assert all(model.config.has_control for model in models), "One or more of the models are not trained for control"
+            models = [FzNetwork.load(job.location, i) for i in range(train_cfg.num_models)]
 
         log.section("Running simulated control")
         with TT.profile("Simulate control"):

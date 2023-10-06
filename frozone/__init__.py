@@ -14,3 +14,7 @@ def tensor_size(x: np.ndarray | torch.Tensor) -> int:
     if isinstance(x, np.ndarray):
         x = torch.from_numpy(x)
     return x.element_size() * x.numel()
+
+def cuda_sync():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()

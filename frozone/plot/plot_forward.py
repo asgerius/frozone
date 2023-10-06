@@ -17,7 +17,7 @@ from frozone.train import TrainConfig, TrainResults
 # completely breaks when having an asynchronous data loader.
 matplotlib.use('Agg')
 
-_plot_folder = "predict-plots"
+_plot_folder = "forward-plots"
 
 def plot_forward(
     path: str,
@@ -79,7 +79,7 @@ def plot_forward(
                                 timesteps[seq_mid-1:seq_end],
                                 pred[i, l, seq_mid-1:seq_end, label],
                                 "-o",
-                                alpha=0.4,
+                                alpha=0.6,
                                 color="grey",
                                 label="Individual predictions" if k == l == 0 else None,
                             )

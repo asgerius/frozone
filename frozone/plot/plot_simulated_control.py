@@ -17,7 +17,7 @@ from frozone.train import TrainConfig, TrainResults
 # completely breaks when having an asynchronous data loader.
 matplotlib.use('Agg')
 
-_plot_folder = "control-plots"
+_plot_folder = "simulation-plots"
 
 def plot_simulated_control(
     path: str,
