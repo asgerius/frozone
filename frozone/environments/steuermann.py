@@ -1,17 +1,13 @@
 import enum
-import random
-import warnings
+import sys
 
 import numpy as np
 from tqdm import tqdm
 
-from frozone.data import squared_exponential_kernel
 from frozone.environments import Environment
 from frozone.environments.steuermann_model.framework import simulate
 from frozone.environments.steuermann_model.model.model import f
 
-
-warnings.filterwarnings("error")
 
 class Steuermann(Environment):
 
@@ -19,13 +15,13 @@ class Steuermann(Environment):
     is_simulation = True
 
     class XLabels(enum.IntEnum):
-        PolyRadius = 0
-        CrystalRadius = 1
+        PolyDia = 0
+        CrystalDia = 1
         UpperZone = 2
         LowerZone = 3
         MeltVolume = 4
         CrystalAngle = 5
-        MeltNeckRadius = 6
+        MeltNeckDia = 6
         PolyAngle = 7
 
     class ULabels(enum.IntEnum):
@@ -39,35 +35,50 @@ class Steuermann(Environment):
         CrystallizationRate = 2
         TdGeneratorVoltage = 3
 
-    no_reference_variables = (XLabels.PolyAngle, )
+    no_reference_variables = (XLabels.PolyDia, XLabels.MeltVolume,
+                              XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle)
 
-    _lower = 0.9
-    _upper = 1.1
+    _lower = 0.8
+    _upper = 1.2
     control_limits = {
         ULabels.GeneratorVoltage: (5 * _lower, 5 * _upper),
-        ULabels.PolyPullRate: (3.8 / 60 * _lower, 3.8 / 60 * _upper),
-        ULabels.CrystalPullRate: (3.8 / 60 * _lower, 3.8 / 60 * _upper),
+        ULabels.PolyPullRate:     (3.8 * _lower, 3.8 * _upper),
+        ULabels.CrystalPullRate:  (3.8 * _lower, 3.8 * _upper),
+    }
+
+    units = {
+        ("X", XLabels.PolyDia): "mm",
+        ("X", XLabels.CrystalDia): "mm",
+        ("X", XLabels.UpperZone): "mm",
+        ("X", XLabels.LowerZone): "mm",
+        ("X", XLabels.MeltVolume): "cm$^3$",
+        ("X", XLabels.CrystalAngle): "deg",
+        ("X", XLabels.MeltNeckDia): "mm",
+        ("X", XLabels.PolyAngle): "deg",
+        ("U", ULabels.GeneratorVoltage): "kV",
+        ("U", ULabels.PolyPullRate): "mm/min",
+        ("U", ULabels.CrystalPullRate): "mm/min",
     }
 
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
         X = super().sample_init_process_vars(n)
-        X[:, cls.XLabels.PolyRadius] = 50
-        X[:, cls.XLabels.CrystalRadius] = 50
+        X[:, cls.XLabels.PolyDia] = 100
+        X[:, cls.XLabels.CrystalDia] = 100
         X[:, cls.XLabels.UpperZone] = 7
         X[:, cls.XLabels.LowerZone] = 14
         X[:, cls.XLabels.MeltVolume] = 65
         X[:, cls.XLabels.CrystalAngle] = 0
-        X[:, cls.XLabels.MeltNeckRadius] = 10
+        X[:, cls.XLabels.MeltNeckDia] = 20
         X[:, cls.XLabels.PolyAngle] = 0
         return X
 
     @classmethod
     def sample_init_control_vars(cls, n: int) -> np.ndarray:
         U = np.empty((n, len(cls.ULabels)), dtype=cls.U_dtype)
-        U[:, ] = 5
-        U[:, cls.ULabels.PolyPullRate] = 3.8 / 60
-        U[:, cls.ULabels.CrystalPullRate] = 3.8 / 60
+        U[:, cls.ULabels.GeneratorVoltage] = 5
+        U[:, cls.ULabels.PolyPullRate] = 3.8
+        U[:, cls.ULabels.CrystalPullRate] = 3.8
         return U
 
     @classmethod
@@ -78,44 +89,29 @@ class Steuermann(Environment):
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
 
-        U_offsets = {
-            cls.ULabels.GeneratorVoltage: 5,
-            cls.ULabels.PolyPullRate: 3.8 / 60,
-            cls.ULabels.CrystalPullRate: 3.8 / 60,
-        }
-        U = np.zeros((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
-        for i in range(n):
-            for ulab, offset in U_offsets.items():
-                if random.random() < 0.5:
-                    # Sometimes, use constant values
-                    U[i, :, ulab] = offset
-                else:
-                    # Other times, generate smooth data from a Gaussian process
-                    num_start = np.random.randint(1, timesteps // 3)
-                    l = np.random.uniform(100, 1000)
-                    xs = np.arange(num_start, timesteps) * cls.dt
-                    x0 = np.array([num_start - 1]) * cls.dt
-
-                    K = squared_exponential_kernel(x0, x0, l)
-                    Ks = squared_exponential_kernel(x0, xs, l)
-                    Kss = squared_exponential_kernel(xs, xs, l)
-
-                    covs = Kss - Ks.T @ np.linalg.pinv(K) @ Ks
-
-                    U[i, :, ulab] = offset
-                    U[i, num_start:, ulab] += 0.04 * offset * np.random.multivariate_normal(np.zeros(len(xs)), covs)
-
-        U = cls.limit_control(U)
+        U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
+        U[:, 0] = cls.sample_init_control_vars(n)
+        U = np.stack([U[:, 0]] * timesteps, axis=1)
 
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
         Z[..., cls.ZLabels.Time] = np.arange(0, timesteps) * cls.dt
-        Z[:, 0, cls.ZLabels.MeltingRate] = U[:, 0, cls.ULabels.PolyPullRate]
-        Z[:, 0, cls.ZLabels.CrystallizationRate] = U[:, 0, cls.ULabels.CrystalPullRate]
+        Z[:, 0, cls.ZLabels.MeltingRate] = U[:, 0, cls.ULabels.PolyPullRate] / 60
+        Z[:, 0, cls.ZLabels.CrystallizationRate] = U[:, 0, cls.ULabels.CrystalPullRate] / 60
         Z[:, 0, cls.ZLabels.TdGeneratorVoltage] = U[:, 0, cls.ULabels.GeneratorVoltage]
 
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        for i in tqdm(range(timesteps-1)) if with_tqdm else range(timesteps-1):
+        for j in range(2):
+            start = j * 4800
+            response_iters = np.random.randint(int((start + 3 * 60) // cls.dt), int((start + 10 * 60) // cls.dt), n)
+
+            response_vars = np.random.randint(0, len(cls.ULabels), n)
+            response = np.random.uniform(0.92, 1.08, n)
+            for i in range(n):
+                if response_iters[i] < timesteps:
+                    U[i, response_iters[i]:, response_vars[i]] = response[i] * U[i, 0, response_vars[i]]
+
+        for i in tqdm(range(timesteps-1), file=sys.stdout, disable=not with_tqdm):
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],
                 S[:, i], Z[:, i],
@@ -132,29 +128,37 @@ class Steuermann(Environment):
         Snew = S.copy()
         Znew = Z.copy()
 
+        u_convertions = np.array([1, 60, 60])
+
         for i in range(n):
             x0 = np.array([
-                X[i, cls.XLabels.PolyRadius],
-                X[i, cls.XLabels.CrystalRadius],
+                X[i, cls.XLabels.PolyDia] / 2,
+                X[i, cls.XLabels.CrystalDia] / 2,
                 X[i, cls.XLabels.UpperZone],
                 X[i, cls.XLabels.LowerZone],
                 X[i, cls.XLabels.MeltVolume],
                 Z[i, cls.ZLabels.MeltingRate],
                 Z[i, cls.ZLabels.CrystallizationRate],
-                X[i, cls.XLabels.CrystalAngle],
+                X[i, cls.XLabels.CrystalAngle] * np.pi / 180,
                 Z[i, cls.ZLabels.TdGeneratorVoltage],
-                X[i, cls.XLabels.MeltNeckRadius],
+                X[i, cls.XLabels.MeltNeckDia] / 2,
             ])
+            x_pred = simulate(
+                x0,
+                U[i] / u_convertions,
+                Z[i, cls.ZLabels.Time],
+                Z[i, cls.ZLabels.Time] + cls.dt,
+                f,
+                z=[X[i, cls.XLabels.PolyAngle] * np.pi / 180],
+            )
 
-            x_pred = simulate(x0, U[i], Z[i, cls.ZLabels.Time], Z[i, cls.ZLabels.Time] + cls.dt, f, z=[X[i, cls.XLabels.PolyAngle]])
-
-            Xnew[i, cls.XLabels.PolyRadius] = x_pred[0]
-            Xnew[i, cls.XLabels.CrystalRadius] = x_pred[1]
+            Xnew[i, cls.XLabels.PolyDia] = x_pred[0] * 2
+            Xnew[i, cls.XLabels.CrystalDia] = x_pred[1] * 2
             Xnew[i, cls.XLabels.UpperZone] = x_pred[2]
             Xnew[i, cls.XLabels.LowerZone] = x_pred[3]
             Xnew[i, cls.XLabels.MeltVolume] = x_pred[4]
-            Xnew[i, cls.XLabels.CrystalAngle] = x_pred[7]
-            Xnew[i, cls.XLabels.MeltNeckRadius] = x_pred[9]
+            Xnew[i, cls.XLabels.CrystalAngle] = x_pred[7] * 180 / np.pi
+            Xnew[i, cls.XLabels.MeltNeckDia] = x_pred[9] * 2
 
             Znew[i, cls.ZLabels.Time] = Z[i, cls.ZLabels.Time] + cls.dt
             Znew[i, cls.ZLabels.MeltingRate] = x_pred[5]
