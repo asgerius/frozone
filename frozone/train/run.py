@@ -1,7 +1,6 @@
 import gc
 import os
 import time
-import warnings
 
 import torch
 from pelutils import log, TT
@@ -10,8 +9,6 @@ from pelutils.parser import Parser, Argument, Option
 import frozone.train
 from frozone.train.train import train
 
-
-warnings.filterwarnings("always")
 
 options = (
     Argument("env"),
