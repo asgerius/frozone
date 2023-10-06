@@ -1,6 +1,5 @@
 import os
 import random
-import warnings
 from typing import Type
 
 import numpy as np
@@ -16,8 +15,6 @@ from frozone.model.floatzone_network import FzNetwork
 from frozone.plot.plot_simulated_control import plot_simulated_control
 from frozone.train import TrainConfig, TrainResults, get_loss_fns
 
-
-warnings.filterwarnings("error")
 
 class ControllerStrategies:
 
@@ -130,7 +127,7 @@ class ControllerStrategies:
                 S[[i], seq_start:seq_mid],
             )
             for model in self.models:
-                with torch.inference_mode():
+                with torch.no_grad():
                     target_Xf = self.get_target_Xf(Xh, self.X_true_d[[i], seq_mid:seq_end])
                     (zh, Zu, Zx), _, Uf = model(
                         Xh, Uh, Sh,
@@ -182,7 +179,7 @@ def simulated_control(
         model.eval().requires_grad_(False)
 
     log("Simulating data")
-    timesteps = train_cfg.H + simulation_cfg.simulation_steps(env) + train_cfg.F
+    timesteps = train_cfg.H + simulation_cfg.simulation_steps(env) + train_cfg.F - simulation_cfg.control_every_steps(env, train_cfg)
     X_all, U_all, S_all, Z_all = env.simulate(simulation_cfg.num_samples, timesteps, with_tqdm=False)
     dataset = [(X, U, S, Z) for X, U, S, Z in zip(X_all, U_all, S_all, Z_all)]
 
@@ -275,7 +272,7 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(5, 200 * env.dt, 1 * env.dt, 5 * env.dt, 5, 2e-2)
+        simulation_cfg = SimulationConfig(10, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
