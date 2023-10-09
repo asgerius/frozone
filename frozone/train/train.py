@@ -212,7 +212,7 @@ def train(job: JobDescription):
                             models,
                             train_cfg,
                             train_results,
-                            SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2),
+                            SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 5, 2e-2),
                         )
 
             for dynamics_model, control_model in models:

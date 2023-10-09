@@ -272,7 +272,7 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, train_cfg.prediction_window, 5, 2e-2)
+        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 5, 2e-2)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
