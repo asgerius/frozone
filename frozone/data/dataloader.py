@@ -26,8 +26,6 @@ def load_data_files(npz_files: list[str], train_cfg: Optional[TrainConfig], max_
 
     max_num_files = max_num_files or None
 
-    env = train_cfg.get_env()
-
     if max_num_files:
         # Shuffle files when only loading a subset to get a more representative subset
         npz_files = copy(npz_files)
@@ -37,7 +35,7 @@ def load_data_files(npz_files: list[str], train_cfg: Optional[TrainConfig], max_
     for npz_file in npz_files[:max_num_files]:
         arrs = np.load(npz_file)
         X, U, S = arrs["X"], arrs["U"], arrs["S"]
-        if train_cfg and train_cfg.phase and env is FloatZone:
+        if train_cfg and train_cfg.phase and train_cfg.get_env() is FloatZone:
             is_phase = FloatZone.is_phase(train_cfg.phase, S)
             X = X[is_phase]
             U = U[is_phase]
