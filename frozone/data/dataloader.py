@@ -20,6 +20,8 @@ from frozone.environments import Environment, FloatZone
 from frozone.train import TrainConfig, TrainResults
 
 
+EPS = 1e-6
+
 def load_data_files(npz_files: list[str], train_cfg: Optional[TrainConfig], max_num_files = 0) -> Dataset:
     """ Loads data for an environment, which is returned as a list of (X, U, S) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
@@ -85,10 +87,10 @@ def standardize(
         std_x = np.sqrt(sse_x / (n - 1))
         std_u = np.sqrt(sse_u / (n - 1))
 
-        train_results.mean_x = mean_x.astype(np.float32)
-        train_results.std_x = std_x.astype(np.float32)
-        train_results.mean_u = mean_u.astype(np.float32)
-        train_results.std_u = std_u.astype(np.float32)
+        train_results.mean_x = mean_x.astype(env.X_dtype)
+        train_results.std_x = std_x.astype(env.X_dtype)
+        train_results.mean_u = mean_u.astype(env.U_dtype)
+        train_results.std_u = std_u.astype(env.U_dtype)
 
     else:
 
@@ -96,12 +98,9 @@ def standardize(
             X[...] = X - train_results.mean_x
             U[...] = U - train_results.mean_u
 
-    eps = 1e-6
-    for i, (X, U, S, *_) in enumerate(dataset):
-        X[...] = X / (train_results.std_x + eps)
-        U[...] = U / (train_results.std_u + eps)
-
-        dataset[i] = tuple(data.astype(np.float16) for data in dataset[i])
+    for X, U, S, *_ in dataset:
+        X[...] = X / (train_results.std_x + EPS)
+        U[...] = U / (train_results.std_u + EPS)
 
 def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device).float() for x in args]
