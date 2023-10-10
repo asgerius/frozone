@@ -72,7 +72,6 @@ def get_phase_slices(fname: str, df: pd.DataFrame) -> dict[int, slice]:
             break
 
     # Keep only interesting phases
-    from pprint import pprint
     slices = { phase: slice_ for phase, slice_ in slices.items() if 8 <= phase <= 1024 }
     if len(slices) < 2:
         return dict()
@@ -110,14 +109,19 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
     for phase, slice_ in zip(sorted_phases, sorted_slices):
         slice_data = slice(slice_.start - offset, slice_.stop - offset)
 
-        X[slice_data, FloatZone.XLabels.PolyDia]    = df["PolyDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.CrystalDia]    = df["CrysDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.UpperZone]  = df["UpperZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.LowerZone]  = df["LowerZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.FullZone]   = df["FullZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.MeltVolume] = df["MeltVolume[mm3]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.PolyAngle]  = df["PolyAngle[deg]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.CrystalAngle]  = df["CrysAngle[deg]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.PolyDia]      = df["PolyDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalDia]   = df["CrysDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.UpperZone]    = df["UpperZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.LowerZone]    = df["LowerZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.FullZone]     = df["FullZone[mm]"].values[slice_]
+        if phase >= 512:
+            # From the cone phase and onwards, the zone calculation is changed, so correct for this by adding the introduced offset
+            X[slice_data, FloatZone.XLabels.UpperZone] += X[slice_data.start-1, FloatZone.XLabels.UpperZone] - X[slice_data.start, FloatZone.XLabels.UpperZone]
+            X[slice_data, FloatZone.XLabels.LowerZone] += X[slice_data.start-1, FloatZone.XLabels.LowerZone] - X[slice_data.start, FloatZone.XLabels.LowerZone]
+            X[slice_data, FloatZone.XLabels.FullZone]  += X[slice_data.start-1, FloatZone.XLabels.FullZone] - X[slice_data.start, FloatZone.XLabels.FullZone]
+        X[slice_data, FloatZone.XLabels.MeltVolume]   = df["MeltVolume[mm3]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.PolyAngle]    = df["PolyAngle[deg]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalAngle] = df["CrysAngle[deg]"].values[slice_]
         # X[:, FloatZone.XLabels.MeltNeck]   = df_used["MeltNeck[mm]"].values
         # X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
         # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
