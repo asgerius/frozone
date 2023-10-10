@@ -48,6 +48,7 @@ class FloatZone(Environment):
         ("X", XLabels.CrystalDia): "mm",
         ("X", XLabels.UpperZone): "mm",
         ("X", XLabels.LowerZone): "mm",
+        ("X", XLabels.FullZone): "mm",
         ("X", XLabels.MeltVolume): "cm$^3$",
         ("X", XLabels.PolyAngle): "deg",
         ("X", XLabels.CrystalAngle): "deg",
