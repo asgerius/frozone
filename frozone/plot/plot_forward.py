@@ -81,23 +81,22 @@ def plot_forward(
                     seq_start = k * sequence_length
                     seq_mid = k * sequence_length + train_cfg.H
                     seq_end = (k + 1) * sequence_length
-                    plt.plot(timesteps[seq_start:seq_mid], true_smooth[i, seq_start:seq_mid, label], "-o", c=plots.tab_colours[0], label="True value (smooth)" if k == 0 else None)
-                    plt.plot(timesteps[seq_mid:seq_end], true_smooth[i, seq_mid:seq_end, label], "-o", c=plots.tab_colours[0])
+                    plt.plot(timesteps[seq_start:seq_mid], true_smooth[i, seq_start:seq_mid, label], lw=1.2, c=plots.tab_colours[0], label="True value (smooth)" if k == 0 else None)
+                    plt.plot(timesteps[seq_mid:seq_end], true_smooth[i, seq_mid:seq_end, label], lw=1.2, c=plots.tab_colours[0])
 
                     if pred is not None and plot_preds:
                         for l in range(train_cfg.num_models):
                             plt.plot(
                                 timesteps[seq_mid-1:seq_end],
                                 pred[i, l, seq_mid-1:seq_end, label],
-                                "-o",
-                                alpha=0.6,
+                                alpha=0.8,
                                 color="grey",
                                 label="Individual predictions" if k == l == 0 else None,
                             )
                         plt.plot(
                             timesteps[seq_mid-1:seq_end],
                             pred[i, :, seq_mid-1:seq_end, label].mean(axis=0),
-                            "-o",
+                            lw=1.2,
                             color=plots.tab_colours[1],
                             label="Ensemble" if k == 0 else None,
                         )
@@ -109,7 +108,7 @@ def plot_forward(
                         plt.plot(
                             timesteps[seq_mid-1:seq_end],
                             pred_opt[i, seq_mid-1:seq_end, label],
-                            "-o",
+                            lw=1.2,
                             color=plots.tab_colours[2],
                             label="Ensemble (opt)" if k == 0 else None,
                         )
