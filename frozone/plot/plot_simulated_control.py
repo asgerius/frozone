@@ -104,15 +104,4 @@ def plot_simulated_control(
                 plt.ylabel(env.format_label(label))
                 plt.legend()
 
-                # margin = 0.4
-                # true_min = true[i, :, label].min()
-                # true_max = true[i, :, label].max()
-                # try:
-                #     plt.ylim(
-                #         bottom = true_min - margin * (true_max - true_min),
-                #         top = true_max + margin * (true_max - true_min),
-                #     )
-                # except UserWarning:
-                #     pass
-
                 plt.grid()

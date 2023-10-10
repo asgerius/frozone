@@ -4,7 +4,7 @@ from typing import Type
 
 import numpy as np
 import torch
-from pelutils import TT, log, thousands_seperators
+from pelutils import TT, log, LogLevels, thousands_seperators
 from pelutils.parser import Parser
 
 import frozone.environments as environments
@@ -14,7 +14,7 @@ from frozone.data.dataloader import Dataset, dataset_size, load_data_files, nump
 from frozone.eval import ForwardConfig
 from frozone.model.floatzone_network import FzNetwork
 from frozone.plot.plot_forward import plot_forward
-from frozone.train import TrainConfig, TrainResults, get_loss_fns
+from frozone.train import TrainConfig, TrainResults
 
 
 def forward(
@@ -30,8 +30,6 @@ def forward(
     for dm, cm in models:
         dm.requires_grad_(False)
         cm.requires_grad_(False)
-
-    loss_fn_x, loss_fn_u = get_loss_fns(env, train_cfg)
 
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
@@ -55,6 +53,9 @@ def forward(
     U_pred_opt = U_true.copy()
     X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred)
 
+    X_true_smooth = X_true.clone()
+    U_true_smooth = U_true.clone()
+
     log("Running forward estimation")
     TT.profile("Inference")
     for j in range(forward_cfg.num_sequences):
@@ -65,6 +66,12 @@ def forward(
         U_pred_opt[:, seq_mid:seq_end] = 0
 
         for i, (dynamics_model, control_model) in enumerate(models):
+
+            if i == 0:
+                X_true_smooth[:, seq_start:seq_mid] = dynamics_model.smoothen_h(X_true[:, seq_start:seq_mid])
+                X_true_smooth[:, seq_mid:seq_end] = dynamics_model.smoothen_f(X_true[:, seq_mid:seq_end])
+                U_true_smooth[:, seq_start:seq_mid] = control_model.smoothen_h(U_true[:, seq_start:seq_mid])
+                U_true_smooth[:, seq_mid:seq_end] = control_model.smoothen_f(U_true[:, seq_mid:seq_end])
 
             with TT.profile("Dynamics"), torch.inference_mode():
                 X_pred[:, i, seq_mid:seq_end] = dynamics_model(
@@ -103,7 +110,7 @@ def forward(
                             Uf = Uf,
                         )
 
-                        loss = loss_fn_x(X_true[[k], seq_mid:seq_end], Xf)
+                        loss = dynamics_model.loss(X_true[[k], seq_mid:seq_end], Xf)
                         loss.backward()
 
                         optimizer.step()
@@ -118,13 +125,15 @@ def forward(
     with TT.profile("Unstandardize"):
         X_true = X_true.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_true = U_true.cpu().numpy() * train_results.std_u + train_results.mean_u
+        X_true_smooth = X_true_smooth.cpu().numpy() * train_results.std_x + train_results.mean_x
+        U_true_smooth = U_true_smooth.cpu().numpy() * train_results.std_u + train_results.mean_u
         X_pred = X_pred.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_pred = U_pred.cpu().numpy() * train_results.std_u + train_results.mean_u
         U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
 
     log("Plotting samples")
     with TT.profile("Plot"):
-        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_pred, U_pred, U_pred_opt)
+        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_true_smooth, U_true_smooth, X_pred, U_pred, U_pred_opt)
 
     for dm, cm in models:
         dm.requires_grad_(True)
@@ -134,7 +143,7 @@ if __name__ == "__main__":
     parser = Parser()
     job = parser.parse_args()
 
-    log.configure(os.path.join(job.location, "forward.log"))
+    log.configure(os.path.join(job.location, "forward.log"), print_level=LogLevels.DEBUG)
 
     with log.log_errors:
         log.section("Loading stuff to run forward evaluation")
@@ -165,7 +174,7 @@ if __name__ == "__main__":
             )
 
         log("Standardizing data")
-        with TT.profile("Load data"):
+        with TT.profile("Standardize"):
             standardize(env, test_dataset, train_results)
 
         log.section("Running forward evaluation")

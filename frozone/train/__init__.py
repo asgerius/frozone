@@ -25,29 +25,6 @@ def history_only_weights(env: Type[environments.Environment]) -> np.ndarray:
 
     return x_future_include
 
-def get_loss_fns(env: Type[environments.Environment], train_cfg: TrainConfig) -> tuple[Callable, Callable]:
-    if train_cfg.loss_fn == "l1":
-        loss_fn = torch.nn.L1Loss(reduction="none")
-    elif train_cfg.loss_fn == "l2":
-        loss_fn = torch.nn.MSELoss(reduction="none")
-    elif train_cfg.loss_fn == "huber":
-        _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
-        loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
-    loss_weight = torch.ones(train_cfg.F, device=device)
-    loss_weight = loss_weight / loss_weight.sum()
-
-    future_include_weights = history_only_weights(env)
-    future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
-
-    def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
-        loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-        return (loss.T @ loss_weight * future_include_weights).mean()
-    def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
-        loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
-        return (loss.T @ loss_weight).mean()
-
-    return loss_fn_x, loss_fn_u
-
 @dataclass
 class TrainConfig(DataStorage):
 
@@ -78,6 +55,10 @@ class TrainConfig(DataStorage):
     # This is given as a multiplier to the feature-wise standard deviation in the data
     epsilon:            float
     augment_prob:       float
+
+    def __post_init__(self):
+        assert 0 <= self.epsilon <= 1
+        assert 0 <= self.augment_prob <= 1
 
     @property
     def H(self) -> int:

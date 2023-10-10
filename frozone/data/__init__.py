@@ -38,7 +38,3 @@ PHASE_TO_INDEX = { 8: 0, 16: 1, 32: 2, 64: 3, 256: 4, 512: 5 }
 def list_processed_data_files(data_path: str, train_test_subdir: str) -> list[str]:
     path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, "**", "*.npz")
     return glob(path, recursive=True)
-
-def squared_exponential_kernel(x: np.ndarray, y: np.ndarray, l: float) -> np.ndarray:
-    d = np.subtract.outer(x, y)
-    return np.exp(-d ** 2 / (2 * l ** 2 + 1e-8))

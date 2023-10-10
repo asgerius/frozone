@@ -25,9 +25,10 @@ options = (
     Option("max-num-data-files", type=int, default=0),
     Option("eval-size", type=int, default=4000),
     Option("loss-fn", default="l1", choices=["l1", "l2", "huber"]),
-    Option("huber-delta", type=float, default=0.02),
+    Option("huber-delta", type=float, default=0.1),
     Option("epsilon", type=float, default=0.0),
     Option("augment-prob", type=float, default=0.0),
+    Option("alpha", type=float, default=1, help="Exponential smoothing factor"),
 
     # Model parameters
     Option("dz", type=int, default=256),

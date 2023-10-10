@@ -16,8 +16,7 @@ from pelutils import TickTock, log, LogLevels, thousands_seperators
 import frozone.train
 from frozone import device, tensor_size
 from frozone.data import DataSequence, Dataset, DatasetSim
-from frozone.data.augment import augment as augment_data
-from frozone.environments import Environment
+from frozone.environments import Environment, FloatZone
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -26,6 +25,8 @@ def load_data_files(npz_files: list[str], train_cfg: Optional[TrainConfig], max_
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
 
     max_num_files = max_num_files or None
+
+    env = train_cfg.get_env()
 
     if max_num_files:
         # Shuffle files when only loading a subset to get a more representative subset
@@ -36,6 +37,11 @@ def load_data_files(npz_files: list[str], train_cfg: Optional[TrainConfig], max_
     for npz_file in npz_files[:max_num_files]:
         arrs = np.load(npz_file)
         X, U, S = arrs["X"], arrs["U"], arrs["S"]
+        if train_cfg and train_cfg.phase and env is FloatZone:
+            is_phase = FloatZone.is_phase(train_cfg.phase, S)
+            X = X[is_phase]
+            U = U[is_phase]
+            S = S[is_phase]
         if train_cfg and len(X) < train_cfg.H + train_cfg.F + 3:
             # Ignore files with too little data to be useful
             continue
@@ -115,9 +121,6 @@ def _start_dataloader_thread(
 
     def task():
         nonlocal log_time_every
-
-        # Probability to select a given set is proportional to the amount of data in it
-        p = np.array([len(X) for X, U, S in dataset]) / dataset_size(dataset)
 
         while frozone.train.is_doing_training:
 

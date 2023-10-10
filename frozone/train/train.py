@@ -16,7 +16,7 @@ from frozone.eval.forward import forward
 from frozone.eval.simulated_control import simulated_control
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
-from frozone.train import TrainConfig, TrainResults, get_loss_fns
+from frozone.train import TrainConfig, TrainResults
 
 
 def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
@@ -100,14 +100,15 @@ def train(job: JobDescription):
         t_layer_num = job.t_layer_num,
         t_nhead = job.t_nhead,
         t_d_feedforward = job.t_d_feedforward,
+        alpha = job.alpha,
         dropout = job.dropout,
         activation_fn = job.activation_fn,
     )
     log("Got model configuration", model_config)
 
     for i in range(train_cfg.num_models):
-        dynamics_model = FzNetwork(model_config, for_control=False).to(device)
-        control_model = FzNetwork(model_config, for_control=True).to(device)
+        dynamics_model = FzNetwork(model_config, train_cfg, for_control=False).to(device)
+        control_model = FzNetwork(model_config, train_cfg, for_control=True).to(device)
 
         models.append((dynamics_model, control_model))
         optimizers.append((
@@ -133,8 +134,6 @@ def train(job: JobDescription):
                 "Decoder:     %s" % thousands_seperators(control_model.D.numel()),
                 "Total:       %s" % thousands_seperators(control_model.numel()),
             )
-
-    loss_fn_x, loss_fn_u = get_loss_fns(env, train_cfg)
 
     log_every = 100
     checkpoint_every = 250
@@ -172,16 +171,17 @@ def train(job: JobDescription):
                         with torch.inference_mode(), TT.profile("Forward", hits=train_cfg.num_models), amp_context():
                             Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
                             Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf)
-                        Xf_pred_mean += Xf_pred
-                        Uf_pred_mean += Uf_pred
-                        test_loss_x[j, k] = loss_fn_x(Xf, Xf_pred).item()
-                        test_loss_u[j, k] = loss_fn_u(Uf, Uf_pred).item()
+                            Xf_pred_mean += Xf_pred
+                            Uf_pred_mean += Uf_pred
+                            test_loss_x[j, k] = dynamics_model.loss(Xf, Xf_pred).item()
+                            test_loss_u[j, k] = control_model.loss(Uf, Uf_pred).item()
 
                     Xf_pred_mean /= train_cfg.num_models
                     Uf_pred_mean /= train_cfg.num_models
 
-                    ensemble_loss_x[j] = loss_fn_x(Xf, Xf_pred_mean).item()
-                    ensemble_loss_u[j] = loss_fn_u(Uf, Uf_pred_mean).item()
+                    # This is bad code
+                    ensemble_loss_x[j] = dynamics_model.loss(Xf, Xf_pred_mean).item()
+                    ensemble_loss_u[j] = control_model.loss(Uf, Uf_pred_mean).item()
 
                 for k in range(train_cfg.num_models):
                     train_results.test_loss_x[k].append(test_loss_x[:, k].mean())
@@ -192,6 +192,20 @@ def train(job: JobDescription):
                 train_results.ensemble_loss_x.append(ensemble_loss_x.mean())
                 train_results.ensemble_loss_u.append(ensemble_loss_u.mean())
 
+            log(
+                "Mean test loss X: %.6f" % np.array(train_results.test_loss_x)[:, -1].mean(),
+                "Mean test loss U: %.6f" % np.array(train_results.test_loss_u)[:, -1].mean(),
+                "Ensemble loss X:  %.6f" % train_results.ensemble_loss_x[-1],
+                "Ensemble loss U:  %.6f" % train_results.ensemble_loss_u[-1],
+            )
+
+            # Plot training stuff
+            if is_rare_checkpoint:
+                log("Plotting training progress")
+                plot_loss(job.location, train_cfg, train_results)
+                plot_lr(job.location, train_cfg, train_results)
+            rare_checkpoint_counter = (rare_checkpoint_counter + 1) % rare_checkpoint_every
+
             if batch_no == train_cfg.batches:
                 with TT.profile("Forward evalutation"):
                     forward(
@@ -201,7 +215,7 @@ def train(job: JobDescription):
                         test_dataset,
                         train_cfg,
                         train_results,
-                        ForwardConfig(num_samples=5, num_sequences=1, opt_steps=0, step_size=3e-4),
+                        ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=0, step_size=3e-4),
                     )
 
                 if env.is_simulation:
@@ -218,20 +232,6 @@ def train(job: JobDescription):
             for dynamics_model, control_model in models:
                 dynamics_model.train()
                 control_model.train()
-
-            log(
-                "Mean test loss X: %.6f" % np.array(train_results.test_loss_x)[:, -1].mean(),
-                "Mean test loss U: %.6f" % np.array(train_results.test_loss_u)[:, -1].mean(),
-                "Ensemble loss X:  %.6f" % train_results.ensemble_loss_x[-1],
-                "Ensemble loss U:  %.6f" % train_results.ensemble_loss_u[-1],
-            )
-
-            # Plot training stuff
-            if is_rare_checkpoint:
-                log("Plotting training progress")
-                plot_loss(job.location, train_cfg, train_results)
-                plot_lr(job.location, train_cfg, train_results)
-            rare_checkpoint_counter = (rare_checkpoint_counter + 1) % rare_checkpoint_every
 
             # Save training progress
             train_cfg.save(job.location)
@@ -278,8 +278,8 @@ def train(job: JobDescription):
             with TT.profile("Forward"), amp_context():
                 Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
                 Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf)
-                loss_x = loss_fn_x(Xf, Xf_pred)
-                loss_u = loss_fn_u(Uf, Uf_pred)
+                loss_x = dynamics_model.loss(Xf, Xf_pred)
+                loss_u = control_model.loss(Uf, Uf_pred)
                 cuda_sync()
 
             train_results.train_loss_x[j].append(loss_x.item())

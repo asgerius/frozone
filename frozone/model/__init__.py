@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 from pelutils import DataStorage
 
+from frozone import device
+
 
 @dataclass
 class FzConfig(DataStorage):
@@ -33,8 +35,9 @@ class FzConfig(DataStorage):
     t_nhead: int
     t_d_feedforward: int
 
+    alpha: float
     dropout: float
-    activation_fn: str = "ReLU"
+    activation_fn: str
 
     def __post_init__(self):
         assert self.dx > 0
@@ -48,6 +51,7 @@ class FzConfig(DataStorage):
         assert self.fc_layer_size > 0
 
         assert 0 <= self.dropout < 1
+        assert 0 <= self.alpha < 1
 
     def get_activation_fn(self) -> nn.Module:
         return getattr(nn, self.activation_fn)()
@@ -100,11 +104,11 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         PE[:, index_sin] = torch.sin(torch.outer(pos, 1 / 10000 ** (index_sin / self.config.dz)))
         PE[:, index_cos] = torch.cos(torch.outer(pos, 1 / 10000 ** ((index_cos - 1) / self.config.dz)))
 
-        return nn.Parameter(PE, requires_grad=False)
+        return PE.to(device)
 
 class BaseTransformer(_FloatzoneModule):
 
-    def __init__(self, config: FzConfig, input_d: int, positional_encoding: Optional[nn.Parameter] = None, *, embedding=True):
+    def __init__(self, config: FzConfig, input_d: int, positional_encoding: Optional[torch.FloatTensor] = None, *, embedding=True):
         super().__init__(config)
 
         assert config.dz % config.t_nhead == 0, "dz must be divisble by the number of attention heads, t_nhead"

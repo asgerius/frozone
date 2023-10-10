@@ -7,6 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pelutils.ds.plots as plots
+from pelutils import log
 
 from frozone.environments import Environment
 from frozone.eval import ForwardConfig
@@ -27,6 +28,8 @@ def plot_forward(
     forward_cfg: ForwardConfig,
     X_true: np.ndarray,
     U_true: np.ndarray,
+    X_true_smooth: np.ndarray,
+    U_true_smooth: np.ndarray,
     X_pred: Optional[np.ndarray],
     U_pred: Optional[np.ndarray],
     U_pred_opt: Optional[np.ndarray],
@@ -49,6 +52,7 @@ def plot_forward(
             i += 1
 
     for i in range(forward_cfg.num_samples):
+        log.debug("Sample %i / %i" % (i + 1, forward_cfg.num_samples))
         label_maker = get_next_label()
         with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.png" % i), figsize=(12.5 * width, height * 10)):
             for j in range(width * height):
@@ -60,20 +64,27 @@ def plot_forward(
                 is_x = isinstance(label, env.XLabels)
                 if is_x:
                     true = X_true
+                    true_smooth = X_true_smooth
                     pred = X_pred
                     pred_opt = None
                     plot_preds = label not in env.no_reference_variables
                 else:
                     true = U_true
+                    true_smooth = U_true_smooth
                     pred = U_pred
                     pred_opt = U_pred_opt
                     plot_preds = True
 
-                plt.plot(timesteps, true[i, :, label], "-o", label="True value")
-                if pred is not None and plot_preds:
-                    for k in range(forward_cfg.num_sequences):
-                        seq_mid = k * sequence_length + train_cfg.H
-                        seq_end = (k + 1) * sequence_length
+                plt.plot(timesteps, true[i, :, label], color="grey", label="True value")
+
+                for k in range(forward_cfg.num_sequences):
+                    seq_start = k * sequence_length
+                    seq_mid = k * sequence_length + train_cfg.H
+                    seq_end = (k + 1) * sequence_length
+                    plt.plot(timesteps[seq_start:seq_mid], true_smooth[i, seq_start:seq_mid, label], "-o", c=plots.tab_colours[0], label="True value (smooth)" if k == 0 else None)
+                    plt.plot(timesteps[seq_mid:seq_end], true_smooth[i, seq_mid:seq_end, label], "-o", c=plots.tab_colours[0])
+
+                    if pred is not None and plot_preds:
                         for l in range(train_cfg.num_models):
                             plt.plot(
                                 timesteps[seq_mid-1:seq_end],
@@ -90,6 +101,7 @@ def plot_forward(
                             color=plots.tab_colours[1],
                             label="Ensemble" if k == 0 else None,
                         )
+
                 if pred_opt is not None:
                     for k in range(forward_cfg.num_sequences):
                         seq_mid = k * sequence_length + train_cfg.H
@@ -105,16 +117,5 @@ def plot_forward(
                 plt.xlabel("Time [s]")
                 plt.ylabel(env.format_label(label))
                 plt.legend()
-
-                # margin = 0.4
-                # true_min = true[i, :, label].min()
-                # true_max = true[i, :, label].max()
-                # try:
-                #     plt.ylim(
-                #         bottom = true_min - margin * (true_max - true_min),
-                #         top = true_max + margin * (true_max - true_min),
-                #     )
-                # except UserWarning:
-                #     pass
 
                 plt.grid()

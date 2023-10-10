@@ -13,7 +13,7 @@ from frozone.data.dataloader import numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork
 from frozone.plot.plot_simulated_control import plot_simulated_control
-from frozone.train import TrainConfig, TrainResults, get_loss_fns
+from frozone.train import TrainConfig, TrainResults
 
 
 class ControllerStrategies:
@@ -36,7 +36,6 @@ class ControllerStrategies:
         self.simulation_cfg = simulation_cfg
         self.env = self.train_cfg.get_env()
         self.control_interval = simulation_cfg.control_every_steps(self.env, train_cfg)
-        self.loss_fn_x, self.loss_fn_u = get_loss_fns(self.env, train_cfg)
 
     def sequences(self, step: int) -> tuple[int, int, int, int]:
         seq_start = step
@@ -144,7 +143,7 @@ class ControllerStrategies:
                         Uf = Uf,
                     )
 
-                    loss = self.loss_fn_x(target_Xf, Xf)
+                    loss = dynamics_model.loss(target_Xf, Xf)
                     loss.backward()
 
                     optimizer.step()

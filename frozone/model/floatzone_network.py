@@ -4,17 +4,17 @@ import os
 from typing import Optional
 
 import torch
-import torch.nn as nn
 
 import frozone.model.encoders_h as encoders_h
 import frozone.model.encoders_f as encoders_f
 import frozone.model.decoders as decoders
 from frozone import device
 from frozone.model import FzConfig, _FloatzoneModule
+from frozone.train import TrainConfig, history_only_weights
 
 class FzNetwork(_FloatzoneModule):
 
-    def __init__(self, config: FzConfig, *, for_control: bool):
+    def __init__(self, config: FzConfig, train_cfg: TrainConfig, *, for_control: bool):
         super().__init__(config)
 
         self.for_control = for_control
@@ -27,8 +27,32 @@ class FzNetwork(_FloatzoneModule):
         self.Ef: encoders_f.EncoderF = getattr(encoders_f, encoder_name)(config, config.du if self.for_dynamics else config.dx)
         self.D:  decoders.Decoder    = getattr(decoders, self.config.decoder_name)(config, is_x=self.for_dynamics)
 
-        predict_ref_weights_data = 0.5 ** torch.arange(config.H).flip(0)
-        self.predict_ref_weights = nn.Parameter(predict_ref_weights_data / predict_ref_weights_data.sum(), requires_grad=False)
+        self.smoothing_kernel_h = self._build_low_pass_matrix(config.H)
+        self.smoothing_kernel_f = self._build_low_pass_matrix(config.F)
+
+        # Build loss functions
+        if train_cfg.loss_fn == "l1":
+            loss_fn = torch.nn.L1Loss(reduction="none")
+        elif train_cfg.loss_fn == "l2":
+            loss_fn = torch.nn.MSELoss(reduction="none")
+        elif train_cfg.loss_fn == "huber":
+            _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
+            loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
+        loss_weight = torch.ones(train_cfg.F, device=device)
+        loss_weight = loss_weight / loss_weight.sum()
+
+        future_include_weights = history_only_weights(train_cfg.get_env())
+        future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
+
+        def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
+            loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
+            return (loss.T @ loss_weight * future_include_weights).mean()
+        def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
+            loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
+            return (loss.T @ loss_weight).mean()
+
+        self._loss_fn_x = loss_fn_x
+        self._loss_fn_u = loss_fn_u
 
     def __call__(
         self,
@@ -54,14 +78,39 @@ class FzNetwork(_FloatzoneModule):
         h = Xh if self.for_dynamics else Uh
         f = Uf if self.for_dynamics else Xf
 
-        h_smooth = h.permute(0, 2, 1) @ self.predict_ref_weights
+        h_smooth = self.smoothen_h(h)
 
         zh = self.Eh(Xh, Uh, Sh)
         Zf = self.Ef(Sf, Xf_or_Uf=f)
 
-        pred = self.D(zh, Zf) + h_smooth.unsqueeze(dim=1)
+        pred = self.D(zh, Zf) + h_smooth[:, -1].unsqueeze(dim=1)
+        pred = self.smoothen_f(pred)
 
         return pred
+
+    def smoothen_h(self, h):
+        return torch.matmul(self.smoothing_kernel_h, h)
+
+    def smoothen_f(self, f):
+        return torch.matmul(self.smoothing_kernel_f, f)
+
+    def _build_low_pass_matrix(self, size: int) -> torch.FloatTensor:
+        kernel = torch.empty(size, size)
+        for i in range(size):
+            kernel[i, :i+1] = (1 - self.config.alpha) ** torch.arange(i+1).flip(0)
+            kernel[i, i+1:] = (1 - self.config.alpha) ** (torch.arange(size-i-1) + 1)
+
+        kernel = (kernel.T / kernel.sum(dim=1)).T
+
+        return kernel.to(device)
+
+    def loss(self, target_F: torch.FloatTensor, pred_F: torch.FloatTensor) -> torch.FloatTensor:
+        target_F = self.smoothen_f(target_F)
+
+        if self.for_control:
+            return self._loss_fn_u(target_F, pred_F)
+        else:
+            return self._loss_fn_x(target_F, pred_F)
 
     @classmethod
     def _state_dict_file_name(cls, num: int, for_control: bool) -> str:
@@ -77,9 +126,10 @@ class FzNetwork(_FloatzoneModule):
     @classmethod
     def load(cls, path: str, num: int) -> tuple[_FloatzoneModule, _FloatzoneModule]:
         config = FzConfig.load(path)
+        train_cfg = TrainConfig.load(path)
 
-        dynamics_model = cls(config, for_control=False).to(device)
-        control_model = cls(config, for_control=True).to(device)
+        dynamics_model = cls(config, train_cfg, for_control=False).to(device)
+        control_model = cls(config, train_cfg, for_control=True).to(device)
 
         path = os.path.join(path, "models")
 
