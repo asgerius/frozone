@@ -151,10 +151,9 @@ if __name__ == "__main__":
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
-        forward_cfg = ForwardConfig(num_samples=5, num_sequences=1, opt_steps=5, step_size=1e-2)
-        forward_cfg.save(job.location)
-
         env = train_cfg.get_env()
+        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=5, step_size=1e-2)
+        forward_cfg.save(job.location)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
