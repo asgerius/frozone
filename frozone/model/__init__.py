@@ -51,7 +51,7 @@ class FzConfig(DataStorage):
         assert self.fc_layer_size > 0
 
         assert 0 <= self.dropout < 1
-        assert 0 <= self.alpha < 1
+        assert 0 <= self.alpha <= 1
 
     def get_activation_fn(self) -> nn.Module:
         return getattr(nn, self.activation_fn)()
