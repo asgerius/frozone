@@ -80,7 +80,7 @@ def plot_simulated_control(
                     plt.plot(
                         timesteps_pred,
                         pred_by_model[i, k, timesteps_pred_index, label],
-                        alpha=0.8,
+                        alpha=0.7,
                         lw=1.2,
                         color="grey",
                         label="Individual predictions" if k == 0 else None,

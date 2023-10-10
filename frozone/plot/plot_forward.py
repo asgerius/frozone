@@ -89,7 +89,7 @@ def plot_forward(
                             plt.plot(
                                 timesteps[seq_mid-1:seq_end],
                                 pred[i, l, seq_mid-1:seq_end, label],
-                                alpha=0.8,
+                                alpha=0.7,
                                 color="grey",
                                 label="Individual predictions" if k == l == 0 else None,
                             )
