@@ -56,7 +56,7 @@ def plot_simulated_control(
 
     for i in range(simulation_cfg.num_samples):
         label_maker = get_next_label()
-        with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.png" % i), figsize=(12.5 * width, height * 10)):
+        with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.png" % i), figsize=(12.5 * width, 10 * height)):
             for j in range(width * height):
                 try:
                     label = next(label_maker)
