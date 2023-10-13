@@ -40,7 +40,7 @@ def analyse_full_data(job: JobDescription, dataset: Dataset):
 
             plt.grid()
 
-def analyse_processed_data(job: JobDescription, env: Type[environments.Environment], dataset: Dataset):
+def analyse_processed_data(job: JobDescription, env: Type[environments.Environment], dataset: Dataset, fnames: list[str]):
 
     columns = 4
     is_floatzone = env is environments.FloatZone
@@ -51,21 +51,45 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
         with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
             subplot_no = 0
 
-            for xlabel in env.XLabels:
-                subplot_no += 1
-                plt.subplot(rows, columns, subplot_no)
-                plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=1.5)
-                plt.xlabel("Time [s]")
-                plt.title(env.format_label(xlabel))
-                plt.grid()
+            if is_floatzone:
+                for xlabel in env.XLabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    for phase_num, phase_index in PHASE_TO_INDEX.items():
+                        phase_name = PHASES[phase_num]
+                        is_phase = S[:, phase_index] == 1
+                        plt.plot(env.dt * np.where(is_phase)[0], X[is_phase, xlabel], plots.colours[phase_index], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(xlabel))
+                    plt.grid()
 
-            for ulabel in env.ULabels:
-                subplot_no += 1
-                plt.subplot(rows, columns, subplot_no)
-                plt.plot(env.dt * np.arange(len(U)), U[:, ulabel], lw=1.5)
-                plt.xlabel("Time [s]")
-                plt.title(env.format_label(ulabel))
-                plt.grid()
+                for ulabel in env.ULabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    for phase_num, phase_index in PHASE_TO_INDEX.items():
+                        phase_name = PHASES[phase_num]
+                        is_phase = S[:, phase_index] == 1
+                        plt.plot(env.dt * np.where(is_phase)[0], U[is_phase, ulabel], plots.colours[phase_index], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(ulabel))
+                    plt.grid()
+
+            else:
+                for xlabel in env.XLabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(xlabel))
+                    plt.grid()
+
+                for ulabel in env.ULabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    plt.plot(env.dt * np.arange(len(U)), U[:, ulabel], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(ulabel))
+                    plt.grid()
 
             if is_floatzone:
                 subplot_no += 1
@@ -79,7 +103,9 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 plt.legend(loc="lower right")
                 plt.grid()
 
-def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
+            plt.suptitle(fnames[i], fontsize="xx-large")
+
+def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset, fnames: list[str]):
 
     env = environments.FloatZone
 
@@ -122,7 +148,7 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
-                plt.suptitle(phase_name, fontsize="xx-large")
+                plt.suptitle(f"{phase_name} from {fnames[i]}", fontsize="xx-large")
 
 if __name__ == "__main__":
     parser = Parser(
@@ -136,14 +162,14 @@ if __name__ == "__main__":
     with log.log_errors:
         log.section("Loading data")
         test_data_files = list_processed_data_files(job.location, TEST_SUBDIR)
-        dataset = load_data_files(test_data_files, None, max_num_files=5)
+        dataset, fnames = load_data_files(test_data_files, None, max_num_files=5, return_filenames=True)
         full_dataset = load_data_files(test_data_files, None, max_num_files=len(test_data_files))
 
         shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
 
         log.section("Analysing processed data")
-        analyse_processed_data(job, env, dataset)
+        analyse_processed_data(job, env, dataset, fnames)
         if env is environments.FloatZone:
-            analyse_processed_data_floatzone(job, dataset)
+            analyse_processed_data_floatzone(job, dataset, fnames)
             log.section("Analysing full dataset")
             analyse_full_data(job, full_dataset)
