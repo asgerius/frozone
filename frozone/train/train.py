@@ -93,6 +93,8 @@ def train(job: JobDescription):
         ds = sum(env.S_bin_count),
         H = train_cfg.H,
         F = train_cfg.F,
+        H_interp = int(train_cfg.H * job.history_interp),
+        F_interp = int(train_cfg.F * job.prediction_interp),
         encoder_name = job.encoder_name,
         decoder_name = job.decoder_name,
         fc_layer_num = job.fc_layer_num,

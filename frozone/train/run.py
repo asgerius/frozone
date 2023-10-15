@@ -18,6 +18,8 @@ options = (
     # Training parameters
     Option("history-window", type=float, default=30),
     Option("prediction-window", type=float, default=20),
+    Option("history-interp", type=float, default=1),
+    Option("prediction-interp", type=float, default=1),
     Option("batches", type=int, default=10000),
     Option("batch-size", type=int, default=200),
     Option("lr", type=float, default=1e-5),

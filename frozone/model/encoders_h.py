@@ -16,7 +16,7 @@ class FullyConnected(EncoderH):
     def __init__(self, config: FzConfig):
         super().__init__(config)
 
-        in_size = config.H * (config.dx + config.du + config.ds)
+        in_size = config.H_interp * (config.dx + config.du + config.ds)
 
         self.layers = nn.Sequential(*self.build_fully_connected(in_size, self.config.dz))
 
@@ -29,7 +29,7 @@ class Transformer(EncoderH):
     def __init__(self, config: FzConfig):
         super().__init__(config)
 
-        positional_encoding = self.build_positional_encoding(config.H)
+        positional_encoding = self.build_positional_encoding(config.H_interp)
         self.transformer = BaseTransformer(config, config.dx + config.du + config.ds, positional_encoding)
 
     def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
@@ -43,15 +43,15 @@ class GatedTransformer(EncoderH):
     def __init__(self, config: FzConfig):
         super().__init__(config)
 
-        positional_encoding = self.build_positional_encoding(config.H)
+        positional_encoding = self.build_positional_encoding(config.H_interp)
         channel_d = config.dx + config.du + config.ds
         self.time_transformer = BaseTransformer(config, channel_d, positional_encoding)
 
-        self.channel_transformer = BaseTransformer(config, config.H)
+        self.channel_transformer = BaseTransformer(config, config.H_interp)
 
-        self.gate = nn.Linear(config.dz * (config.H + channel_d), 2)
+        self.gate = nn.Linear(config.dz * (config.H_interp + channel_d), 2)
 
-        self.out_map = nn.Linear(config.dz * (config.H + channel_d), config.dz)
+        self.out_map = nn.Linear(config.dz * (config.H_interp + channel_d), config.dz)
 
     def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
         # Time step-wise tower

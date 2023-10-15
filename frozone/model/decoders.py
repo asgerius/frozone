@@ -32,21 +32,21 @@ class FullyConnected(Decoder):
     def __init__(self, config: FzConfig, *, is_x: bool):
         super().__init__(config, is_x=is_x)
 
-        in_size = (1 + config.F) * self.config.dz
-        out_size = config.F * self.out_d
+        in_size = (1 + config.F_interp) * self.config.dz
+        out_size = config.F_interp * self.out_d
 
         self.layers = nn.Sequential(*self.build_fully_connected(in_size, out_size))
 
     def forward(self, zh: torch.FloatTensor, Z: torch.FloatTensor) -> torch.FloatTensor:
         x = self.concat_to_feature_vec(zh, Z)
-        return self.layers(x).view(-1, self.config.F, self.out_d)
+        return self.layers(x).view(-1, self.config.F_interp, self.out_d)
 
 class Transformer(Decoder):
 
     def __init__(self, config: FzConfig, *, is_x: bool):
         super().__init__(config, is_x=is_x)
 
-        positional_encoding = self.build_positional_encoding(1 + config.F)
+        positional_encoding = self.build_positional_encoding(1 + config.F_interp)
         self.transformer = BaseTransformer(config, config.dz, positional_encoding, embedding=False)
         self.decoder_layer = nn.Linear(config.dz, self.out_d)
 

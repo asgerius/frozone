@@ -75,15 +75,26 @@ class FzNetwork(_FloatzoneModule):
         Xf: Optional[torch.FloatTensor],
         Uf: Optional[torch.FloatTensor],
     ) -> torch.FloatTensor:
-        h = Xh if self.for_dynamics else Uh
+
+        Xh_smooth = self.smoothen_h(Xh)
+        Uh_smooth = self.smoothen_h(Uh)
+        h_smooth = Xh_smooth if self.for_dynamics else Uh_smooth
+
+        h_scale = (self.config.H - (self.config.F - 1) / (self.config.F_interp - 1)) / (self.config.H - 1)
+        Xh_interp = self.interpolate(self.config.H_interp, Xh, h_scale)
+        Uh_interp = self.interpolate(self.config.H_interp, Uh, h_scale)
+        Sh_interp = self.interpolate(self.config.H_interp, Sh, h_scale)
+
         f = Uf if self.for_dynamics else Xf
+        Sf_interp = self.interpolate(self.config.F_interp, Sf)
+        f_interp = self.interpolate(self.config.F_interp, f)
 
-        h_smooth = self.smoothen_h(h)
+        zh = self.Eh(Xh_interp, Uh_interp, Sh_interp)
+        Zf = self.Ef(Sf_interp, Xf_or_Uf=f_interp)
 
-        zh = self.Eh(Xh, Uh, Sh)
-        Zf = self.Ef(Sf, Xf_or_Uf=f)
-
-        pred = self.D(zh, Zf) + h_smooth[:, -1].unsqueeze(dim=1)
+        pred_interp = self.D(zh, Zf)
+        pred = self.interpolate(self.config.F, pred_interp)
+        pred = pred + h_smooth[:, -1].unsqueeze(dim=1)
         pred = self.smoothen_f(pred)
 
         return pred
@@ -111,6 +122,22 @@ class FzNetwork(_FloatzoneModule):
             return self._loss_fn_u(target_F, pred_F)
         else:
             return self._loss_fn_x(target_F, pred_F)
+
+    @staticmethod
+    def interpolate(n: int, fp: torch.Tensor, scale: float = 1) -> torch.Tensor:
+        fp = fp.transpose(-2, -1)
+        x = torch.arange(fp.shape[-1], device=fp.device)
+        a = fp[..., 1:] - fp[..., :-1]
+        b = fp[..., :-1] - a * x[..., :-1]
+
+        xi = scale * torch.linspace(0, fp.shape[-1] - 1, n, device=fp.device)
+        if scale == 1:
+            xi[-1] -= 1
+        index = xi.long()
+        yi = a[..., index] * xi + b[..., index]
+        if scale == 1:
+            yi[..., -1] = fp[..., -1]
+        return yi.transpose(-2, -1)
 
     @classmethod
     def _state_dict_file_name(cls, num: int, for_control: bool) -> str:
