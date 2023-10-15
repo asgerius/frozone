@@ -3,7 +3,7 @@ import abc
 import torch
 import torch.nn as nn
 
-from . import FzConfig, _FloatzoneModule, BaseTransformer
+from frozone.model import FzConfig, _FloatzoneModule, BaseTransformer
 
 
 class Decoder(_FloatzoneModule, abc.ABC):
@@ -55,3 +55,7 @@ class Transformer(Decoder):
         x_t = self.transformer(x)
         out = self.decoder_layer(x_t)
         return out[:, 1:]
+
+    def to(self, device):
+        self.transformer.to(device)
+        return super().to(device)

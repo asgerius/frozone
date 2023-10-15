@@ -41,3 +41,7 @@ class Transformer(EncoderF):
         x = torch.concat((Sf, Xf_or_Uf), dim=2)
         x_t = self.transformer(x)
         return x_t
+
+    def to(self, device):
+        self.transformer.to(device)
+        return super().to(device)

@@ -9,8 +9,6 @@ import torch
 import torch.nn as nn
 from pelutils import DataStorage
 
-from frozone import device
-
 
 @dataclass
 class FzConfig(DataStorage):
@@ -108,7 +106,7 @@ class _FloatzoneModule(nn.Module, abc.ABC):
         PE[:, index_sin] = torch.sin(torch.outer(pos, 1 / 10000 ** (index_sin / self.config.dz)))
         PE[:, index_cos] = torch.cos(torch.outer(pos, 1 / 10000 ** ((index_cos - 1) / self.config.dz)))
 
-        return PE.to(device)
+        return PE
 
 class BaseTransformer(_FloatzoneModule):
 
@@ -146,3 +144,8 @@ class BaseTransformer(_FloatzoneModule):
             x += self.positional_encoding
 
         return self.encoder(x)
+
+    def to(self, device):
+        if self.positional_encoding is not None:
+            self.positional_encoding = self.positional_encoding.to(device)
+        return super().to(device)

@@ -3,14 +3,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pprint import pformat
-from typing import Callable, Optional, Type
+from typing import Optional, Type
 
 import numpy as np
-import torch
 from pelutils import DataStorage
 
 import frozone.environments as environments
-from frozone import device
 
 
 # This global variable is used to indicate to threads whether or not a training is running.

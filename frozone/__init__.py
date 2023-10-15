@@ -5,7 +5,15 @@ import torch
 import torch.cuda.amp as amp
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.device_count() == 0:
+    device_x = device_u = torch.device("cpu")
+elif torch.cuda.device_count() == 1:
+    device_x = device_u = torch.device("cuda")
+else:
+    device_x = torch.device("cuda:0")
+    device_u = torch.device("cuda:1")
+
+print(torch.cuda.device_count(), device_x, device_u)
 
 def amp_context():
     return amp.autocast() if torch.cuda.is_available() else contextlib.ExitStack()
@@ -17,4 +25,5 @@ def tensor_size(x: np.ndarray | torch.Tensor) -> int:
 
 def cuda_sync():
     if torch.cuda.is_available():
-        torch.cuda.synchronize()
+        torch.cuda.synchronize(device_x)
+        torch.cuda.synchronize(device_u)

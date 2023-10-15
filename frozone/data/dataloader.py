@@ -14,7 +14,7 @@ import torch
 from pelutils import TickTock, log, LogLevels, thousands_seperators
 
 import frozone.train
-from frozone import device, tensor_size
+from frozone import device_x, device_u, tensor_size
 from frozone.data import DataSequence, Dataset, DatasetSim
 from frozone.environments import Environment, FloatZone
 from frozone.train import TrainConfig, TrainResults
@@ -110,7 +110,7 @@ def standardize(
         X[...] = X / (train_results.std_x + EPS)
         U[...] = U / (train_results.std_u + EPS)
 
-def numpy_to_torch_device(*args: np.ndarray) -> list[torch.Tensor]:
+def numpy_to_torch_device(*args: np.ndarray, device: torch.device) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device).float() for x in args]
 
 def _start_dataloader_thread(
@@ -157,15 +157,25 @@ def _start_dataloader_thread(
             #         augment_data(X[i], U[i], train_cfg, tt)
 
             with tt.profile("To device"):
-                X, U, S = numpy_to_torch_device(X, U, S)
+                X_dx, U_dx, S_dx = numpy_to_torch_device(X, U, S, device=device_x)
+                X_du, U_du, S_du = numpy_to_torch_device(X, U, S, device=device_u)
             with tt.profile("Split and contiguous"):
-                Xh = X[:, :train_cfg.H].contiguous()
-                Uh = U[:, :train_cfg.H].contiguous()
-                Sh = S[:, :train_cfg.H].contiguous()
-                Xf = X[:, train_cfg.H:].contiguous()
-                Uf = U[:, train_cfg.H:].contiguous()
-                Sf = S[:, train_cfg.H:].contiguous()
-            buffer.put((Xh, Uh, Sh, Xf, Uf, Sf))
+                Xh_dx = X_dx[:, :train_cfg.H].contiguous()
+                Uh_dx = U_dx[:, :train_cfg.H].contiguous()
+                Sh_dx = S_dx[:, :train_cfg.H].contiguous()
+                Xf_dx = X_dx[:, train_cfg.H:].contiguous()
+                Uf_dx = U_dx[:, train_cfg.H:].contiguous()
+                Sf_dx = S_dx[:, train_cfg.H:].contiguous()
+                Xh_du = X_du[:, :train_cfg.H].contiguous()
+                Uh_du = U_du[:, :train_cfg.H].contiguous()
+                Sh_du = S_du[:, :train_cfg.H].contiguous()
+                Xf_du = X_du[:, train_cfg.H:].contiguous()
+                Uf_du = U_du[:, train_cfg.H:].contiguous()
+                Sf_du = S_du[:, train_cfg.H:].contiguous()
+            buffer.put((
+                (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx),
+                (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du),
+            ))
 
             tt.end_profile()
 
@@ -191,9 +201,9 @@ def dataloader(
     train_cfg: TrainConfig,
     dataset: Dataset, *,
     train = False,
-) -> Generator[tuple[torch.FloatTensor], None, None]:
+) -> Generator[tuple[tuple[torch.FloatTensor], tuple[torch.FloatTensor]], None, None]:
 
-    buffer_size = 2 * train_cfg.num_models
+    buffer_size = 4
     buffer = Queue(maxsize=buffer_size)
 
     _start_dataloader_thread(env, train_cfg, dataset, buffer, train=train)
@@ -203,9 +213,9 @@ def dataloader(
         batch = buffer.get()
         if not train and is_first:
             is_first = False
-            size = sum(tensor_size(x) for x in batch)
+            size = sum(tensor_size(x) for x in batch[0])
             log(
-                "Size of batch:  %s b" % thousands_seperators(size),
-                "Size of buffer: %s b" % thousands_seperators(size * buffer_size),
+                "Size of batch:  2 x %s b" % thousands_seperators(size),
+                "Size of buffer: 2 x %s b" % thousands_seperators(size * buffer_size),
             )
         yield batch

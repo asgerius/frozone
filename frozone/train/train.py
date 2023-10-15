@@ -1,5 +1,5 @@
 import math
-from typing import Generic, Type
+from typing import Type
 
 import numpy as np
 import torch
@@ -7,7 +7,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
-from frozone import device, amp_context, cuda_sync
+from frozone import device_x, device_u, amp_context, cuda_sync
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
@@ -109,8 +109,8 @@ def train(job: JobDescription):
     log("Got model configuration", model_config)
 
     for i in range(train_cfg.num_models):
-        dynamics_model = FzNetwork(model_config, train_cfg, for_control=False).to(device)
-        control_model = FzNetwork(model_config, train_cfg, for_control=True).to(device)
+        dynamics_model = FzNetwork(model_config, train_cfg, for_control=False).to(device_x)
+        control_model = FzNetwork(model_config, train_cfg, for_control=True).to(device_u)
 
         models.append((dynamics_model, control_model))
         optimizers.append((
@@ -138,8 +138,8 @@ def train(job: JobDescription):
             )
 
     log_every = 100
-    checkpoint_every = 250
-    rare_checkpoint_every = 15
+    checkpoint_every = 300
+    rare_checkpoint_every = 20
     rare_checkpoint_counter = 1
 
     def checkpoint(batch_no: int):
@@ -166,24 +166,25 @@ def train(job: JobDescription):
                 ensemble_loss_u = np.empty(train_cfg.num_eval_batches)
 
                 for j in range(train_cfg.num_eval_batches):
-                    Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
-                    Xf_pred_mean = torch.zeros_like(Xf)
-                    Uf_pred_mean = torch.zeros_like(Uf)
+                    (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx), \
+                    (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du) = next(test_dataloader)
+                    Xf_pred_mean = torch.zeros_like(Xf_dx)
+                    Uf_pred_mean = torch.zeros_like(Uf_du)
                     for k, (dynamics_model, control_model) in enumerate(models):
                         with torch.inference_mode(), TT.profile("Forward", hits=train_cfg.num_models), amp_context():
-                            Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
-                            Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf)
+                            Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
+                            Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du)
                             Xf_pred_mean += Xf_pred
                             Uf_pred_mean += Uf_pred
-                            test_loss_x[j, k] = dynamics_model.loss(Xf, Xf_pred).item()
-                            test_loss_u[j, k] = control_model.loss(Uf, Uf_pred).item()
+                            test_loss_x[j, k] = dynamics_model.loss(Xf_dx, Xf_pred).item()
+                            test_loss_u[j, k] = control_model.loss(Uf_du, Uf_pred).item()
 
                     Xf_pred_mean /= train_cfg.num_models
                     Uf_pred_mean /= train_cfg.num_models
 
                     # This is bad code
-                    ensemble_loss_x[j] = dynamics_model.loss(Xf, Xf_pred_mean).item()
-                    ensemble_loss_u[j] = control_model.loss(Uf, Uf_pred_mean).item()
+                    ensemble_loss_x[j] = dynamics_model.loss(Xf_dx, Xf_pred_mean).item()
+                    ensemble_loss_u[j] = control_model.loss(Uf_du, Uf_pred_mean).item()
 
                 for k in range(train_cfg.num_models):
                     train_results.test_loss_x[k].append(test_loss_x[:, k].mean())
@@ -276,23 +277,18 @@ def train(job: JobDescription):
             dynamics_scheduler, control_scheduler = schedulers[j]
 
             with TT.profile("Get data"):
-                Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
-            with TT.profile("Forward"), amp_context():
-                Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
-                Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf)
-                loss_x = dynamics_model.loss(Xf, Xf_pred)
-                loss_u = control_model.loss(Uf, Uf_pred)
-                cuda_sync()
+                (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx), \
+                (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du) = next(test_dataloader)
+            with TT.profile("Step"), amp_context():
+                Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
+                Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du)
 
-            train_results.train_loss_x[j].append(loss_x.item())
-            train_results.train_loss_u[j].append(loss_u.item())
+                loss_x = dynamics_model.loss(Xf_dx, Xf_pred)
+                loss_u = control_model.loss(Uf_du, Uf_pred)
 
-            with TT.profile("Backward"):
                 loss_x.backward()
                 loss_u.backward()
-                cuda_sync()
 
-            with TT.profile("Step"):
                 dynamics_optimizer.step()
                 dynamics_optimizer.zero_grad()
                 dynamics_scheduler.step()
@@ -301,6 +297,9 @@ def train(job: JobDescription):
                 control_optimizer.zero_grad()
                 control_scheduler.step()
                 cuda_sync()
+
+            train_results.train_loss_x[j].append(loss_x.item())
+            train_results.train_loss_u[j].append(loss_u.item())
 
         if do_log:
             log.debug(

@@ -8,9 +8,10 @@ import torch
 import frozone.model.encoders_h as encoders_h
 import frozone.model.encoders_f as encoders_f
 import frozone.model.decoders as decoders
-from frozone import device
+from frozone import device_x, device_u
 from frozone.model import FzConfig, _FloatzoneModule
 from frozone.train import TrainConfig, history_only_weights
+
 
 class FzNetwork(_FloatzoneModule):
 
@@ -38,18 +39,20 @@ class FzNetwork(_FloatzoneModule):
         elif train_cfg.loss_fn == "huber":
             _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
             loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
-        loss_weight = torch.ones(train_cfg.F, device=device)
-        loss_weight = loss_weight / loss_weight.sum()
+        self.loss_weight = torch.ones(train_cfg.F)
+        self.loss_weight = self.loss_weight / self.loss_weight.sum()
 
-        future_include_weights = history_only_weights(train_cfg.get_env())
-        future_include_weights = torch.from_numpy(future_include_weights).to(device) * len(future_include_weights) / future_include_weights.sum()
+        self.future_include_weights = history_only_weights(train_cfg.get_env())
+        self.future_include_weights = torch.from_numpy(self.future_include_weights) * \
+            len(self.future_include_weights) / \
+            self.future_include_weights.sum()
 
         def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
             loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-            return (loss.T @ loss_weight * future_include_weights).mean()
+            return (loss.T @ self.loss_weight * self.future_include_weights).mean()
         def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
             loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
-            return (loss.T @ loss_weight).mean()
+            return (loss.T @ self.loss_weight).mean()
 
         self._loss_fn_x = loss_fn_x
         self._loss_fn_u = loss_fn_u
@@ -113,7 +116,7 @@ class FzNetwork(_FloatzoneModule):
 
         kernel = (kernel.T / kernel.sum(dim=1)).T
 
-        return kernel.to(device)
+        return kernel
 
     def loss(self, target_F: torch.FloatTensor, pred_F: torch.FloatTensor) -> torch.FloatTensor:
         target_F = self.smoothen_f(target_F)
@@ -122,6 +125,16 @@ class FzNetwork(_FloatzoneModule):
             return self._loss_fn_u(target_F, pred_F)
         else:
             return self._loss_fn_x(target_F, pred_F)
+
+    def to(self, device):
+        self.smoothing_kernel_h = self.smoothing_kernel_h.to(device)
+        self.smoothing_kernel_f = self.smoothing_kernel_f.to(device)
+        self.loss_weight = self.loss_weight.to(device)
+        self.future_include_weights = self.future_include_weights.to(device)
+        self.Eh.to(device)
+        self.Ef.to(device)
+        self.D.to(device)
+        return super().to(device)
 
     @staticmethod
     def interpolate(n: int, fp: torch.Tensor, scale: float = 1) -> torch.Tensor:
@@ -155,12 +168,12 @@ class FzNetwork(_FloatzoneModule):
         config = FzConfig.load(path)
         train_cfg = TrainConfig.load(path)
 
-        dynamics_model = cls(config, train_cfg, for_control=False).to(device)
-        control_model = cls(config, train_cfg, for_control=True).to(device)
+        dynamics_model = cls(config, train_cfg, for_control=False).to(device_x)
+        control_model = cls(config, train_cfg, for_control=True).to(device_u)
 
         path = os.path.join(path, "models")
 
-        dynamics_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, False)), map_location=device))
-        control_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, True)), map_location=device))
+        dynamics_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, False)), map_location=device_x))
+        control_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, True)), map_location=device_u))
 
         return dynamics_model, control_model

@@ -1,14 +1,14 @@
 import os
-import random
 from typing import Type
 
 import numpy as np
 import torch
-from pelutils import TT, log, thousands_seperators
+from pelutils import TT, log
 from pelutils.parser import Parser
 from tqdm import tqdm
 
 import frozone.environments as environments
+from frozone import device_x, device_u
 from frozone.data.dataloader import numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork
@@ -30,7 +30,7 @@ class ControllerStrategies:
         self.models = models
         self.X_true = X_true
         self.S_true = S_true
-        self.X_true_d, self.S_true_d = numpy_to_torch_device(X_true, S_true)
+        self.X_true_d, self.S_true_d = numpy_to_torch_device(X_true, S_true, device=device_x)
         self.train_cfg = train_cfg
         self.train_results = train_results
         self.simulation_cfg = simulation_cfg
@@ -65,6 +65,7 @@ class ControllerStrategies:
                 X[:, j, seq_start:seq_mid],
                 U[:, j, seq_start:seq_mid],
                 S[:, j, seq_start:seq_mid],
+                device = device_x,
             )
             U[:, j, seq_mid:seq_control] = control_model(
                 Xh, Uh, Sh,
@@ -92,6 +93,7 @@ class ControllerStrategies:
             X[:, seq_start:seq_mid],
             U[:, seq_start:seq_mid],
             S[:, seq_start:seq_mid],
+            device = device_x,
         )
 
         for dynamics_model, control_model in self.models:
@@ -124,6 +126,7 @@ class ControllerStrategies:
                 X[[i], seq_start:seq_mid],
                 U[[i], seq_start:seq_mid],
                 S[[i], seq_start:seq_mid],
+                device = device_x,
             )
             for dynamics_model, control_model in self.models:
                 with torch.no_grad():
@@ -175,7 +178,7 @@ def simulated_control(
 
     for dm, cm in models:
         dm.eval().requires_grad_(False)
-        cm.eval().requires_grad_(False)
+        cm.eval().requires_grad_(False).to(device_x)
 
     log("Simulating data")
     offset_steps = 0  # int(1000 / env.dt)
@@ -254,7 +257,7 @@ def simulated_control(
 
     for dm, cm in models:
         dm.train().requires_grad_(True)
-        cm.train().requires_grad_(True)
+        cm.train().requires_grad_(True).to(device_u)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -287,7 +290,7 @@ if __name__ == "__main__":
                 train_cfg,
                 train_results,
                 simulation_cfg,
-                with_tqdm=True
+                with_tqdm=True,
             )
 
         log(TT)

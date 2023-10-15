@@ -70,3 +70,8 @@ class GatedTransformer(EncoderH):
         ), dim=1).flatten(1, -1)
 
         return self.out_map(y)
+
+    def to(self, device):
+        self.time_transformer.to(device)
+        self.channel_transformer.to(device)
+        return super().to(device)

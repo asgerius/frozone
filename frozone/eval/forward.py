@@ -8,7 +8,7 @@ from pelutils import TT, log, LogLevels, thousands_seperators
 from pelutils.parser import Parser
 
 import frozone.environments as environments
-from frozone import cuda_sync
+from frozone import cuda_sync, device_x, device_u
 from frozone.data import TEST_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import Dataset, dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import ForwardConfig
@@ -29,7 +29,7 @@ def forward(
 
     for dm, cm in models:
         dm.requires_grad_(False)
-        cm.requires_grad_(False)
+        cm.requires_grad_(False).to(device_x)
 
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
@@ -51,7 +51,7 @@ def forward(
     X_pred = np.stack([X_true] * train_cfg.num_models, axis=1)
     U_pred = np.stack([U_true] * train_cfg.num_models, axis=1)
     U_pred_opt = U_true.copy()
-    X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred)
+    X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred, device=device_x)
 
     X_true_smooth = X_true.clone()
     U_true_smooth = U_true.clone()
@@ -133,11 +133,16 @@ def forward(
 
     log("Plotting samples")
     with TT.profile("Plot"):
-        plot_forward(path, env, train_cfg, train_results, forward_cfg, X_true, U_true, X_true_smooth, U_true_smooth, X_pred, U_pred, U_pred_opt)
+        plot_forward(
+            path, env,
+            train_cfg, train_results, forward_cfg,
+            X_true, U_true, X_true_smooth, U_true_smooth,
+            X_pred, U_pred, U_pred_opt,
+        )
 
     for dm, cm in models:
         dm.requires_grad_(True)
-        cm.requires_grad_(True)
+        cm.requires_grad_(True).to(device_u)
 
 if __name__ == "__main__":
     parser = Parser()
