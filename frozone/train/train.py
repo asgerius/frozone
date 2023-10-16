@@ -29,7 +29,11 @@ def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
 
 def train(job: JobDescription):
 
-    log(HardwareInfo.string())
+    log(
+        HardwareInfo.string(),
+        "Dynamics device: %s" % device_x,
+        "Control device:  %s" % device_u,
+    )
 
     train_cfg = TrainConfig(
         env = job.env,
