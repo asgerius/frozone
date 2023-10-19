@@ -41,7 +41,10 @@ class FloatZone(Environment):
 
     S_bin_count = (len(PHASE_TO_INDEX), 12)
 
-    no_reference_variables = (XLabels.PolyDia, XLabels.UpperZone, XLabels.LowerZone, XLabels.MeltVolume, XLabels.PolyAngle, XLabels.CrystalAngle)
+    no_reference_variables = (XLabels.PolyDia, XLabels.UpperZone, XLabels.LowerZone,
+                              XLabels.MeltVolume, XLabels.PolyAngle, XLabels.CrystalAngle)
+
+    predefined_control: tuple[ULabels] = (ULabels.CrystalPullRate, )
 
     units = {
         ("X", XLabels.PolyDia): "mm",

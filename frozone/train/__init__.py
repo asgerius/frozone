@@ -15,13 +15,21 @@ import frozone.environments as environments
 # If it is false, threads should stop within a very short amount of time.
 is_doing_training = False
 
-def history_only_weights(env: Type[environments.Environment]) -> np.ndarray:
+def history_only_process(env: Type[environments.Environment]) -> np.ndarray:
 
-    x_future_include = np.ones(len(env.XLabels), dtype=np.float32)
+    x_target_include = np.ones(len(env.XLabels), dtype=np.float32)
     for xlab in env.no_reference_variables:
-        x_future_include[xlab] = 0
+        x_target_include[xlab] = 0
 
-    return x_future_include
+    return x_target_include
+
+def history_only_control(env: Type[environments.Environment]) -> np.ndarray:
+
+    u_target_include = np.ones(len(env.ULabels), dtype=np.float32)
+    for ulab in env.predefined_control:
+        u_target_include[ulab] = 0
+
+    return u_target_include
 
 @dataclass
 class TrainConfig(DataStorage):

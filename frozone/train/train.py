@@ -1,4 +1,3 @@
-import asyncio
 import math
 from typing import Type
 
@@ -96,6 +95,7 @@ def train(job: JobDescription):
         du = len(env.ULabels),
         dz = job.dz,
         ds = sum(env.S_bin_count),
+        dr = len(env.reference_variables),
         H = train_cfg.H,
         F = train_cfg.F,
         H_interp = int(train_cfg.H * job.history_interp),
@@ -178,7 +178,7 @@ def train(job: JobDescription):
                     for k, (dynamics_model, control_model) in enumerate(models):
                         with torch.inference_mode(), TT.profile("Forward", hits=train_cfg.num_models), amp_context():
                             Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
-                            Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du)
+                            Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du[..., env.reference_variables])
                             Xf_pred_mean += Xf_pred
                             Uf_pred_mean += Uf_pred
                             test_loss_x[j, k] = dynamics_model.loss(Xf_dx, Xf_pred).item()
@@ -255,40 +255,14 @@ def train(job: JobDescription):
                 total_examples = train_cfg.num_models * train_cfg.batch_size * batch_no
                 batch_profile = next(p for p in TT.profiles if p.name == "Batch")
                 total_train_time = batch_profile.sum()
+                time_per_batch = total_train_time / batch_no
+                remaining_time = (train_cfg.batches - batch_no) * time_per_batch
                 log(
-                    "Total training time: %s s" % thousands_seperators(round(total_train_time)),
-                    "Total examples seen: %i x %s" % (train_cfg.num_models, thousands_seperators(total_examples // train_cfg.num_models)),
-                    "Average:             %s examples / s" % thousands_seperators(round(total_examples / total_train_time)),
+                    "Total training time:    %s s" % thousands_seperators(round(total_train_time)),
+                    "Total examples seen:    %i x %s" % (train_cfg.num_models, thousands_seperators(total_examples // train_cfg.num_models)),
+                    "Average:                %s examples / s" % thousands_seperators(round(total_examples / total_train_time)),
+                    "Approx. remaining time: %s s" % thousands_seperators(round(remaining_time)),
                 )
-
-    async def train_dynamics_batch(
-        dynamics_model, dynamics_optimizer, dynamics_scheduler,
-        Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx,
-    ) -> float:
-        Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
-        loss_x = dynamics_model.loss(Xf_dx, Xf_pred)
-        loss_x.backward()
-        dynamics_optimizer.step()
-        dynamics_optimizer.zero_grad()
-        dynamics_scheduler.step()
-        return loss_x.item()
-
-    async def train_control_batch(
-        control_model, control_optimizer, control_scheduler,
-        Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du,
-    ) -> float:
-        Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du)
-        loss_u = control_model.loss(Uf_du, Uf_pred)
-        loss_u.backward()
-        control_optimizer.step()
-        control_optimizer.zero_grad()
-        control_scheduler.step()
-        return loss_u.item()
-
-    async def train_batch(dm, cm, do, co, ds, cs, x_data: tuple, u_data: tuple) -> tuple[float, float]:
-        loss_x = await train_dynamics_batch(dm, do, ds, *x_data)
-        loss_u = await train_control_batch(cm, co, cs, *u_data)
-        return loss_x, loss_u
 
     log.section("Beginning training loop", "Training for %s batches" % thousands_seperators(train_cfg.batches))
     for i in range(train_cfg.batches):
@@ -311,18 +285,31 @@ def train(job: JobDescription):
             dynamics_scheduler, control_scheduler = schedulers[j]
 
             with TT.profile("Get data"):
-                x_data, u_data = next(test_dataloader)
+                (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx), \
+                (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du) = next(test_dataloader)
             with TT.profile("Step"), amp_context():
-                loss_x, loss_u = asyncio.run(train_batch(
-                    dynamics_model, control_model,
-                    dynamics_optimizer, control_optimizer,
-                    dynamics_scheduler, control_scheduler,
-                    x_data, u_data,
-                ))
+                Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
+                Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du[..., env.reference_variables])
+
+                loss_x = dynamics_model.loss(Xf_dx, Xf_pred)
+                loss_u = control_model.loss(Uf_du, Uf_pred)
+
+                loss_x.backward()
+                loss_u.backward()
+
+                dynamics_optimizer.step()
+                control_optimizer.step()
+
+                dynamics_optimizer.zero_grad()
+                control_optimizer.zero_grad()
+
+                dynamics_scheduler.step()
+                control_scheduler.step()
+
                 cuda_sync()
 
-            train_results.train_loss_x[j].append(loss_x)
-            train_results.train_loss_u[j].append(loss_u)
+            train_results.train_loss_x[j].append(loss_x.item())
+            train_results.train_loss_u[j].append(loss_u.item())
 
         if do_log:
             log.debug(

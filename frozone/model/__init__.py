@@ -17,6 +17,7 @@ class FzConfig(DataStorage):
     du: int  # Number of control variables
     ds: int  # Number of static variables after binary encoding
     dz: int  # Number of latent variables
+    dr: int  # Number of reference variables
 
     H: int  # Number of history steps
     F: int  # Number of target steps
@@ -40,7 +41,7 @@ class FzConfig(DataStorage):
     activation_fn: str
 
     def __post_init__(self):
-        assert self.dx > 0
+        assert 0 < self.dr <= self.dx
         assert self.du > 0
         assert self.ds >= 0
         assert self.dz > 0

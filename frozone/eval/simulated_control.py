@@ -100,7 +100,10 @@ class ControllerStrategies:
             U[:, seq_mid:seq_control] += control_model(
                 Xh, Uh, Sh,
                 self.S_true_d[:, seq_mid:seq_end],
-                Xf = self.get_target_Xf(Xh, self.X_true_d[:, seq_mid:seq_end]),
+                Xf = self.get_target_Xf(
+                    Xh[..., self.env.reference_variables],
+                    self.X_true_d[:, seq_mid:seq_end, self.env.reference_variables],
+                ),
             )[:, :self.control_interval].cpu().numpy() / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
@@ -134,7 +137,7 @@ class ControllerStrategies:
                     Uf = control_model(
                         Xh, Uh, Sh,
                         Sf = self.S_true_d[[i], seq_mid:seq_end],
-                        Xf = target_Xf,
+                        Xf = target_Xf[..., self.env.reference_variables],
                     )
                 Uf.requires_grad_()
                 optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)

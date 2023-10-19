@@ -37,6 +37,11 @@ class Environment(abc.ABC):
 
     # Variables that go into the system dynamics but are not predicted, as they have no reference values
     no_reference_variables: tuple[XLabels] = tuple()
+    reference_variables: tuple[XLabels]
+
+    # Control values that are predefined and so are not predicted by the networ
+    predefined_control: tuple[ULabels] = tuple()
+    predicted_control: tuple[ULabels]
 
     control_limits: dict[ULabels, tuple[float | None, float | None]] = dict()
 
@@ -45,9 +50,9 @@ class Environment(abc.ABC):
     def __init_subclass__(cls):
         super().__init_subclass__()
         cls.reference_variables = tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
+        cls.predicted_control = tuple(ulab for ulab in cls.ULabels if ulab not in cls.predefined_control)
 
         assert len(cls.SLabels) == len(cls.S_bin_count)
-        # assert all(x >= 1 for x in cls.S_bin_count)
 
     @classmethod
     def format_label(cls, label: enum.IntEnum):

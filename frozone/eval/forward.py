@@ -89,7 +89,7 @@ def forward(
                     U_true[:, seq_start:seq_mid],
                     S_true[:, seq_start:seq_mid],
                     Sf = S_true[:, seq_mid:seq_end],
-                    Xf = X_true[:, seq_mid:seq_end],
+                    Xf = X_true[:, seq_mid:seq_end, env.reference_variables],
                 )
                 cuda_sync()
 

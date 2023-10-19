@@ -10,7 +10,7 @@ import frozone.model.encoders_f as encoders_f
 import frozone.model.decoders as decoders
 from frozone import device_x, device_u
 from frozone.model import FzConfig, _FloatzoneModule
-from frozone.train import TrainConfig, history_only_weights
+from frozone.train import TrainConfig, history_only_control, history_only_process
 
 
 class FzNetwork(_FloatzoneModule):
@@ -21,11 +21,10 @@ class FzNetwork(_FloatzoneModule):
         self.for_control = for_control
         self.for_dynamics = not for_control
 
-        # Question: Return last layer, or use linear decoder to go from H x dz to dz?
         self.Eh: encoders_h.EncoderH = getattr(encoders_h, config.encoder_name)(config)
 
         encoder_name = "Transformer" if config.encoder_name == "GatedTransformer" else config.encoder_name
-        self.Ef: encoders_f.EncoderF = getattr(encoders_f, encoder_name)(config, config.du if self.for_dynamics else config.dx)
+        self.Ef: encoders_f.EncoderF = getattr(encoders_f, encoder_name)(config, config.du if self.for_dynamics else config.dr)
         self.D:  decoders.Decoder    = getattr(decoders, self.config.decoder_name)(config, is_x=self.for_dynamics)
 
         self.smoothing_kernel_h = self._build_low_pass_matrix(config.H)
@@ -42,17 +41,22 @@ class FzNetwork(_FloatzoneModule):
         self.loss_weight = torch.ones(train_cfg.F)
         self.loss_weight = self.loss_weight / self.loss_weight.sum()
 
-        self.future_include_weights = history_only_weights(train_cfg.get_env())
-        self.future_include_weights = torch.from_numpy(self.future_include_weights) * \
-            len(self.future_include_weights) / \
-            self.future_include_weights.sum()
+        self.target_weights_process = history_only_process(train_cfg.get_env())
+        self.target_weights_process = torch.from_numpy(self.target_weights_process) * \
+            len(self.target_weights_process) / \
+            self.target_weights_process.sum()
+
+        self.target_weights_control = history_only_control(train_cfg.get_env())
+        self.target_weights_control = torch.from_numpy(self.target_weights_control) * \
+            len(self.target_weights_control) / \
+            self.target_weights_control.sum()
 
         def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
             loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-            return (loss.T @ self.loss_weight * self.future_include_weights).mean()
+            return (loss.T @ self.loss_weight * self.target_weights_process).mean()
         def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
             loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
-            return (loss.T @ self.loss_weight).mean()
+            return (loss.T @ self.loss_weight * self.target_weights_control).mean()
 
         self._loss_fn_x = loss_fn_x
         self._loss_fn_u = loss_fn_u
@@ -130,7 +134,8 @@ class FzNetwork(_FloatzoneModule):
         self.smoothing_kernel_h = self.smoothing_kernel_h.to(device)
         self.smoothing_kernel_f = self.smoothing_kernel_f.to(device)
         self.loss_weight = self.loss_weight.to(device)
-        self.future_include_weights = self.future_include_weights.to(device)
+        self.target_weights_process = self.target_weights_process.to(device)
+        self.target_weights_control = self.target_weights_control.to(device)
         self.Eh.to(device)
         self.Ef.to(device)
         self.D.to(device)
