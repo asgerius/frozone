@@ -13,8 +13,6 @@ else:
     device_x = torch.device("cuda:0")
     device_u = torch.device("cuda:1")
 
-print(torch.cuda.device_count(), device_x, device_u)
-
 def amp_context():
     return amp.autocast() if torch.cuda.is_available() else contextlib.ExitStack()
 
