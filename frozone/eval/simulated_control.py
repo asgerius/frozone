@@ -70,7 +70,10 @@ class ControllerStrategies:
             U[:, j, seq_mid:seq_control] = control_model(
                 Xh, Uh, Sh,
                 Sf = self.S_true_d[:, seq_mid:seq_end],
-                Xf = self.get_target_Xf(Xh, self.X_true_d[:, seq_mid:seq_end]),
+                Xf = self.get_target_Xf(
+                    Xh[..., self.env.reference_variables],
+                    self.X_true_d[:, seq_mid:seq_end, self.env.reference_variables],
+                ),
             )[:, :self.control_interval].cpu().numpy()
 
             U[:, j, seq_mid] = self.env.limit_control(U[:, j, seq_mid], mean=self.train_results.mean_u, std=self.train_results.std_u)
