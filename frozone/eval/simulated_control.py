@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 import frozone.environments as environments
 from frozone import device_x, device_u
+from frozone.data import Metadata
 from frozone.data.dataloader import numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork
@@ -190,7 +191,7 @@ def simulated_control(
     offset_steps = 0  # int(1000 / env.dt)
     timesteps = train_cfg.H + simulation_cfg.simulation_steps(env) + train_cfg.F - simulation_cfg.control_every_steps(env, train_cfg)
     X_all, U_all, S_all, Z_all = env.simulate(simulation_cfg.num_samples, timesteps + offset_steps, with_tqdm=False)
-    dataset = [(X[offset_steps:], U[offset_steps:], S[offset_steps:], Z[offset_steps:]) for X, U, S, R, Z in zip(X_all, U_all, S_all, Z_all)]
+    dataset = [(Metadata(len(X)-offset_steps), (X[offset_steps:], U[offset_steps:], S[offset_steps:], Z[offset_steps:])) for X, U, S, Z in zip(X_all, U_all, S_all, Z_all)]
 
     log("Standardizing data")
     with TT.profile("Standardize"):
@@ -281,7 +282,7 @@ if __name__ == "__main__":
         env = train_cfg.get_env()
         assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
-        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 5, 2e-2)
+        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 0, 2e-2)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):

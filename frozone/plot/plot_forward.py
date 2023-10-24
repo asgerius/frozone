@@ -9,6 +9,7 @@ import numpy as np
 import pelutils.ds.plots as plots
 from pelutils import log
 
+from frozone.data import Metadata
 from frozone.environments import Environment
 from frozone.eval import ForwardConfig
 from frozone.train import TrainConfig, TrainResults
@@ -26,6 +27,7 @@ def plot_forward(
     train_cfg: TrainConfig,
     train_results: TrainResults,
     forward_cfg: ForwardConfig,
+    metadatas: list[Metadata],
     X_true: np.ndarray,
     U_true: np.ndarray,
     X_true_smooth: np.ndarray,
@@ -33,6 +35,7 @@ def plot_forward(
     X_pred: Optional[np.ndarray],
     U_pred: Optional[np.ndarray],
     U_pred_opt: Optional[np.ndarray],
+    U_pred_ref: Optional[np.ndarray],
     R_true: np.ndarray,
 ):
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
@@ -52,8 +55,8 @@ def plot_forward(
                 yield env.ULabels(i - len(env.XLabels))
             i += 1
 
-    for i in range(forward_cfg.num_samples):
-        log.debug("Sample %i / %i" % (i + 1, forward_cfg.num_samples))
+    for i in range(X_pred.shape[0]):
+        log.debug("Sample %i / %i" % (i + 1, X_pred.shape[0]))
         label_maker = get_next_label()
         with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.png" % i), figsize=(12.5 * width, height * 10)):
             for j in range(width * height):
@@ -68,12 +71,14 @@ def plot_forward(
                     true_smooth = X_true_smooth
                     pred = X_pred
                     pred_opt = None
+                    pred_ref = None
                     plot_preds = label not in env.no_reference_variables
                 else:
                     true = U_true
                     true_smooth = U_true_smooth
                     pred = U_pred
                     pred_opt = U_pred_opt
+                    pred_ref = U_pred_ref
                     plot_preds = label not in env.predefined_control
 
                 plt.plot(timesteps, true[i, :, label], color="grey", label="True value")
@@ -104,13 +109,22 @@ def plot_forward(
                             label="Ensemble" if k == 0 else None,
                         )
 
-                    if pred_opt is not None and plot_preds:
+                    # if pred_opt is not None and plot_preds:
+                    #     plt.plot(
+                    #         timesteps[seq_mid-1:seq_end],
+                    #         pred_opt[i, seq_mid-1:seq_end, label],
+                    #         lw=1.2,
+                    #         color=plots.tab_colours[2],
+                    #         label="Ensemble (opt)" if k == 0 else None,
+                    #     )
+
+                    if pred_ref is not None and plot_preds:
                         plt.plot(
                             timesteps[seq_mid-1:seq_end],
-                            pred_opt[i, seq_mid-1:seq_end, label],
+                            pred_ref[i, seq_mid-1:seq_end, label],
                             lw=1.2,
-                            color=plots.tab_colours[2],
-                            label="Ensemble (opt)" if k == 0 else None,
+                            color="red",
+                            label="Ensemble (ref)" if k == 0 else None,
                         )
 
                 plt.xlabel("Time [s]")
@@ -118,3 +132,5 @@ def plot_forward(
                 plt.legend()
 
                 plt.grid()
+
+            plt.suptitle(f"{os.path.split(metadatas[i].raw_file)[-1] or 'Simulation'} ({metadatas[i].date.year})", fontsize="xx-large")

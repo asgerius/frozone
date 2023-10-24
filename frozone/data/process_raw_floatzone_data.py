@@ -5,6 +5,7 @@ import os
 import random
 import shutil
 import sys
+from datetime import datetime
 from glob import glob as glob  # glob
 from pprint import pformat
 from typing import Optional
@@ -14,9 +15,8 @@ import pandas as pd
 from pelutils import split_path, log, thousands_seperators
 from tqdm import tqdm
 
-from frozone.data import PHASE_TO_INDEX, DataSequence, PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT
+from frozone.data import PHASE_TO_INDEX, DataSequence, PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT, Metadata
 from frozone.environments import FloatZone
-
 
 # These files all have something weird going on in them, so they are skipped
 # See the logfile produced by data/analysis.log for details
@@ -110,11 +110,11 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
     for phase, slice_ in zip(sorted_phases, sorted_slices):
         slice_data = slice(slice_.start - offset, slice_.stop - offset)
 
-        X[slice_data, FloatZone.XLabels.PolyDia]    = df["PolyDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.CrystalDia] = df["CrysDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.UpperZone]  = df["UpperZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.LowerZone]  = df["LowerZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.FullZone]   = df["FullZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.PolyDia]      = df["PolyDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalDia]   = df["CrysDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.UpperZone]    = df["UpperZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.LowerZone]    = df["LowerZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.FullZone]     = df["FullZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.MeltVolume]   = df["MeltVolume[mm3]"].values[slice_]
         X[slice_data, FloatZone.XLabels.PolyAngle]    = df["PolyAngle[deg]"].values[slice_]
         X[slice_data, FloatZone.XLabels.CrystalAngle] = df["CrysAngle[deg]"].values[slice_]
@@ -152,6 +152,7 @@ def process_floatzone_file(args: list[str]) -> str | None:
         file_path_components = split_path(filepath)
         log("Loading %s" % full_path)
         df = pd.read_csv(full_path, quoting=3, delim_whitespace=True)
+        date = datetime.date(datetime.strptime(df.Date.values[0], "%Y-%m-%d"))
         machine = file_path_components[0]
         log("Parsing file")
         data = parse_floatzone_df(filepath, df, machine)
@@ -167,7 +168,12 @@ def process_floatzone_file(args: list[str]) -> str | None:
             )
             log("Saving file with sequence length %s" % thousands_seperators(len(X)))
             os.makedirs(os.path.split(outpath)[0], exist_ok=True)
-            np.savez(outpath, X=X, U=U, S=S, R=R)
+            metadata = Metadata(
+                length=len(X),
+                raw_file=full_path,
+                date=date,
+            )
+            np.savez(outpath, metadata=metadata, X=X, U=U, S=S, R=R)
 
 def process_floatzone_data(data_path: str, processes=None, max_files=None) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     log.configure(os.path.join(data_path, "process.log"), print_level=None)

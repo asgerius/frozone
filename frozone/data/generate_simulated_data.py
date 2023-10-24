@@ -3,13 +3,14 @@ import random
 import shutil
 import warnings
 from argparse import ArgumentParser
+from datetime import datetime
 from typing import Type
 
 import numpy as np
 from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT
+from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT, Metadata
 
 
 warnings.filterwarnings("error")
@@ -28,7 +29,8 @@ def generate(path: str, env: Type[environments.Environment], num_simulations: in
             f"{env.__name__}_{i}.npz",
         )
         os.makedirs(os.path.split(outpath)[0], exist_ok=True)
-        np.savez_compressed(outpath, X=X[i], U=U[i], S=S[i])
+        metadata = Metadata(length=len(X))
+        np.savez_compressed(outpath, metadata=metadata, X=X[i], U=U[i], S=S[i], R=R[i])
 
 if __name__ == "__main__":
     parser = ArgumentParser()

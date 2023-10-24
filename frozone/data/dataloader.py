@@ -26,40 +26,38 @@ def load_data_files(
     npz_files: list[str],
     train_cfg: Optional[TrainConfig],
     max_num_files=0,
-    return_filenames=False,
-) -> Dataset | tuple[Dataset, list[str]]:
+    year=0,
+) -> Dataset:
     """ Loads data for an environment, which is returned as a list of (X, U, S, R) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
 
     max_num_files = max_num_files or None
-
-    if max_num_files:
-        # Shuffle files when only loading a subset to get a more representative subset
-        npz_files = copy(npz_files)
-        random.shuffle(npz_files)
+    npz_files = copy(npz_files)
+    random.shuffle(npz_files)
 
     sets = list()
-    for npz_file in npz_files[:max_num_files]:
-        arrs = np.load(npz_file)
-        X, U, S, R = arrs["X"], arrs["U"], arrs["S"], arrs["R"]
+    for npz_file in npz_files:
+        arrs = np.load(npz_file, allow_pickle=True)
+        metadata, X, U, S, R = arrs["metadata"].item(), arrs["X"], arrs["U"], arrs["S"], arrs["R"]
         if train_cfg and train_cfg.phase and train_cfg.get_env() is FloatZone:
             is_phase = FloatZone.is_phase(train_cfg.phase, S)
             X = X[is_phase]
             U = U[is_phase]
             S = S[is_phase]
             R = R[is_phase]
-        if train_cfg and len(X) < train_cfg.H + train_cfg.F + 3:
+            metadata.length = len(X)
+        if (train_cfg and metadata.length < train_cfg.H + train_cfg.F + 3) or metadata.date.year < year:
             # Ignore files with too little data to be useful
+            # Also ignore too old data
             continue
-        sets.append((X, U, S, R))
+        sets.append((metadata, (X, U, S, R)))
+        if len(sets) == max_num_files:
+            return sets
 
-    if return_filenames:
-        return sets, npz_files[:max_num_files]
-    else:
-        return sets
+    return sets
 
 def dataset_size(dataset: Dataset) -> int:
-    return sum(len(X) for X, U, S, R in dataset)
+    return sum(metadata.length for metadata, _ in dataset)
 
 def standardize(
     env: Type[Environment],
@@ -78,7 +76,7 @@ def standardize(
 
         # Calculate sum
         n = 0
-        for X, U, S, R in dataset:
+        for _, (X, U, S, R) in dataset:
             sum_x += X.sum(axis=0)
             sum_u += U.sum(axis=0)
             n += len(X)
@@ -87,7 +85,7 @@ def standardize(
         mean_u = sum_u / n
 
         # Calculate variance
-        for X, U, S, R in dataset:
+        for _, (X, U, S, R) in dataset:
             X[...] = X - mean_x
             U[...] = U - mean_u
 
@@ -104,14 +102,14 @@ def standardize(
 
     else:
 
-        for X, U, S, R, *_ in dataset:
+        for _, (X, U, S, R, *_) in dataset:
             X[...] = X - train_results.mean_x
             U[...] = U - train_results.mean_u
 
-    for X, U, S, R, *_ in dataset:
+    for _, (X, U, S, R, *_) in dataset:
         X[...] = X / (train_results.std_x + EPS)
         U[...] = U / (train_results.std_u + EPS)
-        R[...] = (R - train_results.std_x[env.reference_variables]) / (train_results.std_x[env.reference_variables] + EPS)
+        R[...] = (R - train_results.mean_x[env.reference_variables]) / (train_results.std_x[env.reference_variables] + EPS)
 
 def numpy_to_torch_device(*args: np.ndarray, device: torch.device) -> list[torch.Tensor]:
     return [torch.from_numpy(x).to(device).float() for x in args]
@@ -147,7 +145,7 @@ def _start_dataloader_thread(
             set_index = np.random.choice(np.arange(len(dataset)), train_cfg.batch_size, replace=True)
 
             for i in range(train_cfg.batch_size):
-                X_seq, U_seq, S_seq, *_ = dataset[set_index[i]]
+                _, (X_seq, U_seq, S_seq, *_) = dataset[set_index[i]]
                 start_iter = random.randint(0, len(X_seq) - train_cfg.H - train_cfg.F - 1)
 
                 with tt.profile("Get slices"):

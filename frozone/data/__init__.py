@@ -1,16 +1,24 @@
 import os
+from dataclasses import dataclass
+from datetime import datetime
 from glob import glob as glob  # glob
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 import numpy as np
 
 
+@dataclass
+class Metadata:
+    length: int
+    raw_file: str | None = None
+    date: datetime = datetime.date(datetime.now())
+
 # X, U, S, R
 DataSequence = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-Dataset = List[DataSequence]
+Dataset = List[Tuple[Metadata, DataSequence]]
 # X, U, S, R, Z
 DataSequenceSim = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-DatasetSim = List[DataSequenceSim]
+DatasetSim = List[Tuple[Metadata, DataSequenceSim]]
 
 TRAIN_TEST_SPLIT = 0.9
 RAW_SUBDIR = "Raw"

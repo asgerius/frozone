@@ -1,5 +1,6 @@
 import os
 import random
+from datetime import datetime
 from typing import Type
 
 import numpy as np
@@ -34,7 +35,8 @@ def forward(
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
-    dataset = [(X, U, S, R) for X, U, S, R in dataset if len(X) >= timesteps]
+    dataset = [data for data in dataset if data[0].length >= timesteps][:forward_cfg.num_samples]
+    forward_cfg.num_samples = len(dataset)  # This is no good, very terrible code
     random.shuffle(dataset)
     log("%s files after filtering" % thousands_seperators(len(dataset)))
 
@@ -43,20 +45,24 @@ def forward(
     U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
     S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
     R_true = np.empty((forward_cfg.num_samples, timesteps, len(env.reference_variables)), dtype=env.X_dtype)
-    for i, (X, U, S, R) in enumerate(dataset[:forward_cfg.num_samples]):
+    metadatas = list()
+    for i, (metadata, (X, U, S, R)) in enumerate(dataset[:forward_cfg.num_samples]):
+        metadatas.append(metadata)
         start_index = 0  # np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]
         U_true[i] = U[start_index : start_index + timesteps]
         S_true[i] = S[start_index : start_index + timesteps]
         R_true[i] = R[start_index : start_index + timesteps]
 
-
     X_pred = np.stack([X_true] * train_cfg.num_models, axis=1)
     U_pred = np.stack([U_true] * train_cfg.num_models, axis=1)
     U_pred_opt = U_true.copy()
-    X_true, U_true, S_true, X_pred, U_pred, R_true = numpy_to_torch_device(
-        X_true, U_true, S_true, X_pred, U_pred, R_true, device=device_x,
+    U_pred_ref = U_true.copy()
+    X_true, U_true, S_true, X_pred, U_pred, U_pred_ref, R_true = numpy_to_torch_device(
+        X_true, U_true, S_true, X_pred, U_pred, U_pred_ref, R_true, device=device_x,
     )
+    # This is just for testing purposes
+    # R_true = torch.rand_like(R_true)
 
     X_true_smooth = X_true.clone()
     U_true_smooth = U_true.clone()
@@ -69,6 +75,7 @@ def forward(
         seq_end = (j + 1) * sequence_length
 
         U_pred_opt[:, seq_mid:seq_end] = 0
+        U_pred_ref[:, seq_mid:seq_end] = 0
 
         for i, (dynamics_model, control_model) in enumerate(models):
 
@@ -98,7 +105,7 @@ def forward(
                 )
                 cuda_sync()
 
-            with TT.profile("Optimized"), torch.inference_mode(False):
+            with TT.profile("Control (optimized)"), torch.inference_mode(False):
 
                 for k in range(forward_cfg.num_samples):
 
@@ -125,6 +132,16 @@ def forward(
 
                 cuda_sync()
 
+            with TT.profile("Control (reference)"), torch.inference_mode():
+                U_pred_ref[:, seq_mid:seq_end] += control_model(
+                    X_true[:, seq_start:seq_mid],
+                    U_true[:, seq_start:seq_mid],
+                    S_true[:, seq_start:seq_mid],
+                    Sf = S_true[:, seq_mid:seq_end],
+                    Xf = R_true[:, seq_mid:seq_end],
+                ).squeeze() / train_cfg.num_models
+                cuda_sync()
+
     TT.end_profile()
 
     with TT.profile("Unstandardize"):
@@ -135,15 +152,16 @@ def forward(
         X_pred = X_pred.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_pred = U_pred.cpu().numpy() * train_results.std_u + train_results.mean_u
         U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
+        U_pred_ref = U_pred_ref.cpu().numpy() * train_results.std_u + train_results.mean_u
         R_true = R_true.cpu().numpy() * train_results.std_x[env.reference_variables] + train_results.mean_x[env.reference_variables]
 
     log("Plotting samples")
     with TT.profile("Plot"):
         plot_forward(
             path, env,
-            train_cfg, train_results, forward_cfg,
+            train_cfg, train_results, forward_cfg, metadatas,
             X_true, U_true, X_true_smooth, U_true_smooth,
-            X_pred, U_pred, U_pred_opt, R_true,
+            X_pred, U_pred, U_pred_opt, U_pred_ref, R_true,
         )
 
     for dm, cm in models:
@@ -163,7 +181,7 @@ if __name__ == "__main__":
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
         env = train_cfg.get_env()
-        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=5, step_size=1e-2)
+        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=0, step_size=1e-2)
         forward_cfg.save(job.location)
 
         log("Loading models")
@@ -176,7 +194,7 @@ if __name__ == "__main__":
         log("Loading data")
         with TT.profile("Load data"):
             test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
-            test_dataset = load_data_files(test_npz_files, train_cfg, max_num_files = 2 * forward_cfg.num_samples)
+            test_dataset = load_data_files(test_npz_files, train_cfg, max_num_files=3*forward_cfg.num_samples, year=datetime.now().year)
             log(
                 "Loaded dataset",
                 "Used test files:  %s" % thousands_seperators(len(test_dataset)),

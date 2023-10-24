@@ -2,6 +2,7 @@
 import math
 import os
 import shutil
+from datetime import datetime
 from glob import glob as glob  # glob
 from typing import Type
 
@@ -19,14 +20,14 @@ from frozone.data.dataloader import load_data_files
 
 _plot_folder = "analysis-plots"
 
-def analyse_full_data(job: JobDescription, dataset: Dataset):
+def analyse_full_floatzone_data(job: JobDescription, dataset: Dataset):
 
     env = environments.FloatZone
 
     with plots.Figure(os.path.join(job.location, _plot_folder, f"phase-dist.png"), figsize=(25, 18)):
         for phase, phase_index in PHASE_TO_INDEX.items():
             counts = list()
-            for X, U, S, R in dataset:
+            for metadata, (X, U, S, R) in dataset:
                 is_phase = env.is_phase(phase, S)
                 if c := is_phase.sum():
                     counts.append(c)
@@ -40,14 +41,14 @@ def analyse_full_data(job: JobDescription, dataset: Dataset):
 
             plt.grid()
 
-def analyse_processed_data(job: JobDescription, env: Type[environments.Environment], dataset: Dataset, fnames: list[str]):
+def analyse_processed_data(job: JobDescription, env: Type[environments.Environment], dataset: Dataset):
 
     columns = 4
     is_floatzone = env is environments.FloatZone
     rows = math.ceil((len(env.XLabels) + len(env.ULabels) + is_floatzone) / columns)
 
     log("Plotting %i samples" % len(dataset))
-    for i, (X, U, S, R) in enumerate(dataset):
+    for i, (metadata, (X, U, S, R)) in enumerate(dataset):
         with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
             subplot_no = 0
 
@@ -119,9 +120,9 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 plt.legend(loc="lower right")
                 plt.grid()
 
-            plt.suptitle(fnames[i], fontsize="xx-large")
+            plt.suptitle(os.path.split(metadata.raw_file or "Simulation")[-1] + f" ({metadata.date.year})", fontsize="xx-large")
 
-def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset, fnames: list[str]):
+def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
 
     env = environments.FloatZone
 
@@ -138,7 +139,7 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset, fnam
         plot_folder = os.path.join(job.location, _plot_folder + " " + phase_name)
         shutil.rmtree(plot_folder, ignore_errors=True)
 
-        for i, (X_full, U_full, S_full, R_full) in enumerate(dataset):
+        for i, (metadata, (X_full, U_full, S_full, R_full)) in enumerate(dataset):
             is_phase = env.is_phase(phase, S_full)
             if not is_phase.sum():
                 continue
@@ -168,7 +169,7 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset, fnam
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
-                plt.suptitle(f"{phase_name} from {fnames[i]}", fontsize="xx-large")
+                plt.suptitle(f"{phase_name} from {os.path.split(metadata.raw_file)[-1]} ({metadata.date.year})", fontsize="xx-large")
 
 if __name__ == "__main__":
     parser = Parser(
@@ -182,14 +183,14 @@ if __name__ == "__main__":
     with log.log_errors:
         log.section("Loading data")
         test_data_files = list_processed_data_files(job.location, TEST_SUBDIR)
-        dataset, fnames = load_data_files(test_data_files, None, max_num_files=5, return_filenames=True)
+        dataset = load_data_files(test_data_files, None, max_num_files=5, year=datetime.now().year)
         full_dataset = load_data_files(test_data_files, None, max_num_files=len(test_data_files))
 
         shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
 
         log.section("Analysing processed data")
-        analyse_processed_data(job, env, dataset, fnames)
+        analyse_processed_data(job, env, dataset)
         if env is environments.FloatZone:
-            analyse_processed_data_floatzone(job, dataset, fnames)
+            analyse_processed_data_floatzone(job, dataset)
             log.section("Analysing full dataset")
-            analyse_full_data(job, full_dataset)
+            analyse_full_floatzone_data(job, full_dataset)
