@@ -36,12 +36,12 @@ class Environment(abc.ABC):
     S_bin_count: tuple[int] = tuple()
 
     # Variables that go into the system dynamics but are not predicted, as they have no reference values
-    no_reference_variables: tuple[XLabels] = tuple()
-    reference_variables: tuple[XLabels]
+    no_reference_variables: list[XLabels] = list()
+    reference_variables: list[XLabels]
 
     # Control values that are predefined and so are not predicted by the networ
-    predefined_control: tuple[ULabels] = tuple()
-    predicted_control: tuple[ULabels]
+    predefined_control: list[ULabels] = list()
+    predicted_control: list[ULabels]
 
     control_limits: dict[ULabels, tuple[float | None, float | None]] = dict()
 
@@ -49,8 +49,8 @@ class Environment(abc.ABC):
 
     def __init_subclass__(cls):
         super().__init_subclass__()
-        cls.reference_variables = tuple(xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables)
-        cls.predicted_control = tuple(ulab for ulab in cls.ULabels if ulab not in cls.predefined_control)
+        cls.reference_variables = [xlab for xlab in cls.XLabels if xlab not in cls.no_reference_variables]
+        cls.predicted_control = [ulab for ulab in cls.ULabels if ulab not in cls.predefined_control]
 
         assert len(cls.SLabels) == len(cls.S_bin_count)
 
@@ -131,7 +131,7 @@ class Environment(abc.ABC):
 
         U[:, -1] = cls.sample_new_control_vars(X[:, -1], U[:, -2])
 
-        return X, U, S, Z
+        return X, U, S, X[..., cls.reference_variables].copy(), Z
 
     @abc.abstractclassmethod
     def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

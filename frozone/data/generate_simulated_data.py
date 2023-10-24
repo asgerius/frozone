@@ -15,7 +15,7 @@ from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST
 warnings.filterwarnings("error")
 
 def generate(path: str, env: Type[environments.Environment], num_simulations: int, iters: int):
-    X, U, S, Z = env.simulate(num_simulations, iters)
+    X, U, S, R, Z = env.simulate(num_simulations, iters)
 
     shutil.rmtree(os.path.join(path, PROCESSED_SUBDIR), ignore_errors=True)
 

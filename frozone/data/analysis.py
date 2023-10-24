@@ -26,7 +26,7 @@ def analyse_full_data(job: JobDescription, dataset: Dataset):
     with plots.Figure(os.path.join(job.location, _plot_folder, f"phase-dist.png"), figsize=(25, 18)):
         for phase, phase_index in PHASE_TO_INDEX.items():
             counts = list()
-            for X, U, S in dataset:
+            for X, U, S, R in dataset:
                 is_phase = env.is_phase(phase, S)
                 if c := is_phase.sum():
                     counts.append(c)
@@ -47,7 +47,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
     rows = math.ceil((len(env.XLabels) + len(env.ULabels) + is_floatzone) / columns)
 
     log("Plotting %i samples" % len(dataset))
-    for i, (X, U, S) in enumerate(dataset):
+    for i, (X, U, S, R) in enumerate(dataset):
         with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
             subplot_no = 0
 
@@ -58,7 +58,23 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                     for phase_num, phase_index in PHASE_TO_INDEX.items():
                         phase_name = PHASES[phase_num]
                         is_phase = S[:, phase_index] == 1
-                        plt.plot(env.dt * np.where(is_phase)[0], X[is_phase, xlabel], plots.colours[phase_index], lw=1.5)
+                        plt.plot(
+                            env.dt * np.where(is_phase)[0],
+                            X[is_phase, xlabel],
+                            color=plots.colours[phase_index],
+                            lw=1.5,
+                        )
+                        if xlabel in env.reference_variables:
+                            plt.plot(
+                                env.dt * np.where(is_phase)[0],
+                                R[is_phase, env.reference_variables.index(xlabel)],
+                                color="black",
+                                lw=1.5,
+                                label="Reference" if phase_index == 0 else None,
+                            )
+
+                    if xlabel in env.reference_variables:
+                        plt.legend()
                     plt.xlabel("Time [s]")
                     plt.title(env.format_label(xlabel))
                     plt.grid()
@@ -122,12 +138,13 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset, fnam
         plot_folder = os.path.join(job.location, _plot_folder + " " + phase_name)
         shutil.rmtree(plot_folder, ignore_errors=True)
 
-        for i, (X_full, U_full, S_full) in enumerate(dataset):
+        for i, (X_full, U_full, S_full, R_full) in enumerate(dataset):
             is_phase = env.is_phase(phase, S_full)
             if not is_phase.sum():
                 continue
             X = X_full[is_phase]
             U = U_full[is_phase]
+            R = R_full[is_phase]
 
             with plots.Figure(os.path.join(plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
                 subplot_no = 0
@@ -135,7 +152,10 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset, fnam
                 for xlabel in env.XLabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], lw=1.5)
+                    plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], lw=1.5, label="Observed")
+                    if xlabel in env.reference_variables:
+                        plt.plot(env.dt * np.arange(len(R)), R[:, env.reference_variables.index(xlabel)], lw=1.5, label="Reference")
+                        plt.legend()
                     plt.xlabel("Time [s]")
                     plt.title(env.format_label(xlabel))
                     plt.grid()

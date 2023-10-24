@@ -5,9 +5,11 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 
-DataSequence = Tuple[np.ndarray, np.ndarray, np.ndarray]
+# X, U, S, R
+DataSequence = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 Dataset = List[DataSequence]
-DataSequenceSim = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+# X, U, S, R, Z
+DataSequenceSim = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 DatasetSim = List[DataSequenceSim]
 
 TRAIN_TEST_SPLIT = 0.9

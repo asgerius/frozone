@@ -105,20 +105,16 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
     X = np.empty((timesteps, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
     U = np.empty((timesteps, len(FloatZone.ULabels)), dtype=FloatZone.U_dtype)
     S = np.zeros((timesteps, sum(FloatZone.S_bin_count)), dtype=FloatZone.S_dtype)
+    R = np.empty((timesteps, len(FloatZone.reference_variables)), dtype=FloatZone.X_dtype)
 
     for phase, slice_ in zip(sorted_phases, sorted_slices):
         slice_data = slice(slice_.start - offset, slice_.stop - offset)
 
-        X[slice_data, FloatZone.XLabels.PolyDia]      = df["PolyDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.CrystalDia]   = df["CrysDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.UpperZone]    = df["UpperZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.LowerZone]    = df["LowerZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.FullZone]     = df["FullZone[mm]"].values[slice_]
-        if phase >= 512:
-            # From the cone phase and onwards, the zone calculation is changed, so correct for this by adding the introduced offset
-            X[slice_data, FloatZone.XLabels.UpperZone] += X[slice_data.start-1, FloatZone.XLabels.UpperZone] - X[slice_data.start, FloatZone.XLabels.UpperZone]
-            X[slice_data, FloatZone.XLabels.LowerZone] += X[slice_data.start-1, FloatZone.XLabels.LowerZone] - X[slice_data.start, FloatZone.XLabels.LowerZone]
-            X[slice_data, FloatZone.XLabels.FullZone]  += X[slice_data.start-1, FloatZone.XLabels.FullZone] - X[slice_data.start, FloatZone.XLabels.FullZone]
+        X[slice_data, FloatZone.XLabels.PolyDia]    = df["PolyDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalDia] = df["CrysDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.UpperZone]  = df["UpperZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.LowerZone]  = df["LowerZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.FullZone]   = df["FullZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.MeltVolume]   = df["MeltVolume[mm3]"].values[slice_]
         X[slice_data, FloatZone.XLabels.PolyAngle]    = df["PolyAngle[deg]"].values[slice_]
         X[slice_data, FloatZone.XLabels.CrystalAngle] = df["CrysAngle[deg]"].values[slice_]
@@ -127,22 +123,27 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
         # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
         # X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
 
-        U[slice_data, FloatZone.ULabels.GeneratorVoltage]     = df["GenVoltage[kV]"].values[slice_]
-        U[slice_data, FloatZone.ULabels.PolyPullRate]   = df["PolyPullRate[mm/min]"].values[slice_]
-        U[slice_data, FloatZone.ULabels.CrystalPullRate]   = df["CrysPullRate[mm/min]"].values[slice_]
-        # U[:, FloatZone.ULabels.PolyRotation]   = df["PolyRotation[rpm]"].values
-        # U[:, FloatZone.ULabels.CrysRotation]   = df["CrysRotation[rpm]"].values
-        # U[:, FloatZone.ULabels.CoilPosition]   = df["CoilPosition[mm]"].values
+        U[slice_data, FloatZone.ULabels.GeneratorVoltage] = df["GenVoltage[kV]"].values[slice_]
+        U[slice_data, FloatZone.ULabels.PolyPullRate]     = df["PolyPullRate[mm/min]"].values[slice_]
+        U[slice_data, FloatZone.ULabels.CrystalPullRate]  = df["CrysPullRate[mm/min]"].values[slice_]
+        # U[:, FloatZone.ULabels.PolyRotation] = df["PolyRotation[rpm]"].values
+        # U[:, FloatZone.ULabels.CrysRotation] = df["CrysRotation[rpm]"].values
+        # U[:, FloatZone.ULabels.CoilPosition] = df["CoilPosition[mm]"].values
 
         S[slice_data, PHASE_TO_INDEX[phase]] = 1
         S[slice_data, len(PHASE_TO_INDEX) + MACHINES.index(machine)] = 1
 
-    assert len(X) == len(U) == len(S), "%i %i %i" % (len(X), len(U), len(S))
+        ref_full_index = FloatZone.reference_variables.index(FloatZone.XLabels.FullZone)
+        R[slice_data, FloatZone.reference_variables.index(FloatZone.XLabels.CrystalDia)] = df["Ref_CrysDia[mm]"].values[slice_]
+        R[slice_data, ref_full_index] = df["Ref_FullZone[mm]"].values[slice_]
+
+    assert len(X) == len(U) == len(S) == len(R), "%i %i %i %i" % (len(X), len(U), len(S), len(R))
     assert np.isnan(X).sum() == 0, f"{fpath}, NaN for X"
     assert np.isnan(U).sum() == 0, f"{fpath}, NaN for U"
     assert np.isnan(S).sum() == 0, f"{fpath}, NaN for S"
+    assert np.isnan(R).sum() == 0, f"{fpath}, NaN for R"
 
-    return X, U, S
+    return X, U, S, R
 
 def process_floatzone_file(args: list[str]) -> str | None:
     raw_data_path, filepath = args
@@ -155,7 +156,7 @@ def process_floatzone_file(args: list[str]) -> str | None:
         log("Parsing file")
         data = parse_floatzone_df(filepath, df, machine)
         if data is not None:
-            X, U, S = data
+            X, U, S, R = data
             train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
             outpath = os.path.join(
                 os.path.join(raw_data_path, os.path.pardir),
@@ -166,7 +167,7 @@ def process_floatzone_file(args: list[str]) -> str | None:
             )
             log("Saving file with sequence length %s" % thousands_seperators(len(X)))
             os.makedirs(os.path.split(outpath)[0], exist_ok=True)
-            np.savez_compressed(outpath, X=X, U=U, S=S)
+            np.savez(outpath, X=X, U=U, S=S, R=R)
 
 def process_floatzone_data(data_path: str, processes=None, max_files=None) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     log.configure(os.path.join(data_path, "process.log"), print_level=None)

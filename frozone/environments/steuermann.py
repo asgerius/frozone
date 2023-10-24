@@ -35,8 +35,8 @@ class Steuermann(Environment):
         CrystallizationRate = 2
         TdGeneratorVoltage = 3
 
-    no_reference_variables = (XLabels.PolyDia, XLabels.MeltVolume,
-                              XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle)
+    no_reference_variables = [XLabels.PolyDia, XLabels.MeltVolume,
+                              XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle]
 
     _lower = 0.8
     _upper = 1.2
@@ -117,7 +117,7 @@ class Steuermann(Environment):
                 S[:, i], Z[:, i],
             )
 
-        return X, U, S, Z
+        return X, U, S, X[..., cls.reference_variables].copy(), Z
 
     @classmethod
     def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

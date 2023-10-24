@@ -33,6 +33,7 @@ def plot_forward(
     X_pred: Optional[np.ndarray],
     U_pred: Optional[np.ndarray],
     U_pred_opt: Optional[np.ndarray],
+    R_true: np.ndarray,
 ):
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
@@ -73,9 +74,11 @@ def plot_forward(
                     true_smooth = U_true_smooth
                     pred = U_pred
                     pred_opt = U_pred_opt
-                    plot_preds = True
+                    plot_preds = label not in env.predefined_control
 
                 plt.plot(timesteps, true[i, :, label], color="grey", label="True value")
+                if is_x and label in env.reference_variables:
+                    plt.plot(timesteps, R_true[i, :, env.reference_variables.index(label)], color="red", label="Reference")
 
                 for k in range(forward_cfg.num_sequences):
                     seq_start = k * sequence_length
@@ -101,10 +104,7 @@ def plot_forward(
                             label="Ensemble" if k == 0 else None,
                         )
 
-                if pred_opt is not None:
-                    for k in range(forward_cfg.num_sequences):
-                        seq_mid = k * sequence_length + train_cfg.H
-                        seq_end = (k + 1) * sequence_length
+                    if pred_opt is not None and plot_preds:
                         plt.plot(
                             timesteps[seq_mid-1:seq_end],
                             pred_opt[i, seq_mid-1:seq_end, label],

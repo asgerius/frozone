@@ -34,7 +34,7 @@ def forward(
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
     log("Filtering dataset to only include files with at least %s data points" % thousands_seperators(timesteps))
-    dataset = [(X, U, S) for X, U, S in dataset if len(X) >= timesteps]
+    dataset = [(X, U, S, R) for X, U, S, R in dataset if len(X) >= timesteps]
     random.shuffle(dataset)
     log("%s files after filtering" % thousands_seperators(len(dataset)))
 
@@ -42,21 +42,26 @@ def forward(
     X_true = np.empty((forward_cfg.num_samples, timesteps, len(env.XLabels)), dtype=env.X_dtype)
     U_true = np.empty((forward_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
     S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
-    for i, (X, U, S) in enumerate(dataset[:forward_cfg.num_samples]):
+    R_true = np.empty((forward_cfg.num_samples, timesteps, len(env.reference_variables)), dtype=env.X_dtype)
+    for i, (X, U, S, R) in enumerate(dataset[:forward_cfg.num_samples]):
         start_index = 0  # np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]
         U_true[i] = U[start_index : start_index + timesteps]
         S_true[i] = S[start_index : start_index + timesteps]
+        R_true[i] = R[start_index : start_index + timesteps]
+
 
     X_pred = np.stack([X_true] * train_cfg.num_models, axis=1)
     U_pred = np.stack([U_true] * train_cfg.num_models, axis=1)
     U_pred_opt = U_true.copy()
-    X_true, U_true, S_true, X_pred, U_pred = numpy_to_torch_device(X_true, U_true, S_true, X_pred, U_pred, device=device_x)
+    X_true, U_true, S_true, X_pred, U_pred, R_true = numpy_to_torch_device(
+        X_true, U_true, S_true, X_pred, U_pred, R_true, device=device_x,
+    )
 
     X_true_smooth = X_true.clone()
     U_true_smooth = U_true.clone()
 
-    log("Running forward estimation")
+    log("Running forward predictions")
     TT.profile("Inference")
     for j in range(forward_cfg.num_sequences):
         seq_start = j * sequence_length
@@ -130,6 +135,7 @@ def forward(
         X_pred = X_pred.cpu().numpy() * train_results.std_x + train_results.mean_x
         U_pred = U_pred.cpu().numpy() * train_results.std_u + train_results.mean_u
         U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
+        R_true = R_true.cpu().numpy() * train_results.std_x[env.reference_variables] + train_results.mean_x[env.reference_variables]
 
     log("Plotting samples")
     with TT.profile("Plot"):
@@ -137,7 +143,7 @@ def forward(
             path, env,
             train_cfg, train_results, forward_cfg,
             X_true, U_true, X_true_smooth, U_true_smooth,
-            X_pred, U_pred, U_pred_opt,
+            X_pred, U_pred, U_pred_opt, R_true,
         )
 
     for dm, cm in models:
