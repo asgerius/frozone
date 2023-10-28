@@ -53,6 +53,65 @@ BLACKLIST = {
     "M32/32-2490_Automation.txt",
     "M32/32-1590_Automation.txt",
     "M32/32-1628_Automation.txt",
+    "M43/43-2434_Automation.txt",
+
+    # These ones cause the simulation to crash
+    # Most of them are obvious failed runs
+    "M38/38_Automation_Archive_2018/38-0794_Automation.txt",
+    "M38/38_Automation_Archive_2018/38-0833_Automation.txt",
+    "M41/41_Automation_Archive_2018/41-0804_Automation.txt",
+    "M36/36_Automation_Archive_2022/36-1700_Automation.txt",
+    "M31/31_Automation_Archive_2021/31-1889_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-0956_Automation.txt",
+    "M34/34_Automation_Archive_2021/34-2103_Automation.txt",
+    "M36/36_Automation_Archive_2018/36-0672_Automation.txt",
+    "M37/37_Automation_Archive_2021/37-0549_Automation.txt",
+    "M32/32-0896_Automation.txt",
+    "M36/36_Automation_Archive_2018/36-0733_Automation.txt",
+    "M43/43-2296_Automation.txt",
+    "M43/43_Automation_Archive_2021/43-1652_Automation.txt",
+    "M33/33_Automation_Archive_2018/33-1269_Automation.txt",
+    "M34/34_Automation_Archive_2016/34-0816_Automation.txt",
+    "M31/31_Automation_Archive_2022/31-2313_Automation.txt",
+    "M32/32_Automation_Archive_2022/32-2274_Automation.txt",
+    "M35/35_Automation_Archive_2019/35-0023_Automation.txt",
+    "M41/41_Automation_Archive_2018/41-0807_Automation.txt",
+    "M33/33_Automation_Archive_2022/33-2612_Automation.txt",
+    "M38/38_Automation_Archive_2018/38-0805_Automation.txt",
+    "M31/31_Automation_Archive_2021/31-2061_Automation.txt",
+    "M36/36_Automation_Archive_2018/36-0754_Automation.txt",
+    "M33/33_Automation_Archive_2018/33-1162_Automation.txt",
+    "M34/34_Automation_Archive_2018/34-1262_Automation.txt",
+    "M31/31-1155_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-0958_Automation.txt",
+    "M36/36_Automation_Archive_2018/36-0592_Automation.txt",
+    "M38/38_Automation_Archive_2021/38-1684_Automation.txt",
+    "M35/35_Automation_Archive_2021/35-0365_Automation.txt",
+    "M41/41_Automation_Archive_2018/41-0815_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-0922_Automation.txt",
+    "M32/32-1004_Automation.txt",
+    "M38/38_Automation_Archive_2017/38-0598_Automation.txt",
+    "M43/43_Automation_Archive_2021/43-1804_Automation.txt",
+    "M38/38_Automation_Archive_2016/38-0302_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-1000_Automation.txt",
+    "M36/36_Automation_Archive_2021/36-1478_Automation.txt",
+    "M36/36_Automation_Archive_2018/36-0549_Automation.txt",
+    "M31/31-1175_Automation.txt",
+    "M41/41_Automation_Archive_2022/41-1827_Automation.txt",
+    "M34/34_Automation_Archive_2018/34-1317_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-0890_Automation.txt",
+    "M38/38_Automation_Archive_2017/38-0445_Automation.txt",
+    "M41/41_Automation_Archive_2021/41-1499_Automation.txt",
+    "M33/33-2827_Automation.txt",
+    "M32/32_Automation_Archive_2021/32-1987_Automation.txt",
+    "M37/37_Automation_Archive_2021/37-0377_Automation.txt",
+    "M33/33_Automation_Archive_2018/33-1138_Automation.txt",
+    "M32/32-1079_Automation.txt",
+    "M34/34_Automation_Archive_2018/34-1276_Automation.txt",
+    "M32/32-0712_Automation.txt",
+    "M43/43_Automation_Archive_2022/43-2206_Automation.txt",
+    "M41/41_Automation_Archive_2020/41-1464_Automation.txt",
+    "M33/33_Automation_Archive_2020/33-1961_Automation.txt",
 }
 MACHINES = ("M31", "M32", "M33", "M34", "M35", "M36", "M37", "M38", "M41", "M43", "M52", "M54")
 
@@ -90,12 +149,12 @@ def get_phase_slices(fname: str, df: pd.DataFrame) -> dict[int, slice]:
 
     return slices
 
-def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[DataSequence]:
+def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int, Optional[DataSequence]]:
 
     # Maps growth state to slice
     slices = get_phase_slices(fpath, df)
     if not slices:
-        return
+        return 1, None
 
     sorted_phases = sorted(slices.keys())
     sorted_slices = [slices[phase] for phase in sorted_phases]
@@ -116,9 +175,10 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
         X[slice_data, FloatZone.XLabels.LowerZone]    = df["LowerZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.FullZone]     = df["FullZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.MeltVolume]   = df["MeltVolume[mm3]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.MeltNeckDia]  = df["MeltNeck[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.PolyAngle]    = df["PolyAngle[deg]"].values[slice_]
         X[slice_data, FloatZone.XLabels.CrystalAngle] = df["CrysAngle[deg]"].values[slice_]
-        # X[:, FloatZone.XLabels.MeltNeck]   = df_used["MeltNeck[mm]"].values
+        X[slice_data, FloatZone.XLabels.FullPolyDia]  = df["PolyDia[mm]"].values[slice_].max() if phase >= 512 else 0
         # X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
         # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
         # X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
@@ -132,10 +192,15 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
 
         S[slice_data, PHASE_TO_INDEX[phase]] = 1
         S[slice_data, len(PHASE_TO_INDEX) + MACHINES.index(machine)] = 1
+        S[slice_data, -1] = 0
 
         ref_full_index = FloatZone.reference_variables.index(FloatZone.XLabels.FullZone)
         R[slice_data, FloatZone.reference_variables.index(FloatZone.XLabels.CrystalDia)] = df["Ref_CrysDia[mm]"].values[slice_]
         R[slice_data, ref_full_index] = df["Ref_FullZone[mm]"].values[slice_]
+
+        if phase >= 16 and (X[slice_data, FloatZone.XLabels.PolyDia] <= 0).any():
+            # If any X values in the snoevs phase or later are 0, this is indicative of a failed run
+            return 2, None
 
     assert len(X) == len(U) == len(S) == len(R), "%i %i %i %i" % (len(X), len(U), len(S), len(R))
     assert np.isnan(X).sum() == 0, f"{fpath}, NaN for X"
@@ -143,9 +208,9 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> Optional[D
     assert np.isnan(S).sum() == 0, f"{fpath}, NaN for S"
     assert np.isnan(R).sum() == 0, f"{fpath}, NaN for R"
 
-    return X, U, S, R
+    return 0, (X, U, S, R)
 
-def process_floatzone_file(args: list[str]) -> str | None:
+def process_floatzone_file(args: list[str]) -> int:
     raw_data_path, filepath = args
     with log.collect:
         full_path = os.path.join(raw_data_path, filepath)
@@ -155,8 +220,8 @@ def process_floatzone_file(args: list[str]) -> str | None:
         date = datetime.date(datetime.strptime(df.Date.values[0], "%Y-%m-%d"))
         machine = file_path_components[0]
         log("Parsing file")
-        data = parse_floatzone_df(filepath, df, machine)
-        if data is not None:
+        code, data = parse_floatzone_df(filepath, df, machine)
+        if code == 0:
             X, U, S, R = data
             train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
             outpath = os.path.join(
@@ -174,6 +239,8 @@ def process_floatzone_file(args: list[str]) -> str | None:
                 date=date,
             )
             np.savez(outpath, metadata=metadata, X=X, U=U, S=S, R=R)
+
+        return code
 
 def process_floatzone_data(data_path: str, processes=None, max_files=None) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     log.configure(os.path.join(data_path, "process.log"), print_level=None)
@@ -194,10 +261,18 @@ def process_floatzone_data(data_path: str, processes=None, max_files=None) -> li
 
     if processes > 1:
         with mp.Pool(processes=processes) as pool:
-            tuple(tqdm(pool.imap(process_floatzone_file, args, chunksize=256), total=len(args)))
+            results = tuple(tqdm(pool.imap(process_floatzone_file, args, chunksize=256), total=len(args)))
     else:
+        results = list()
         for arg in tqdm(args, disable=False):
-            process_floatzone_file(arg)
+            results.append(process_floatzone_file(arg))
+
+    results = np.array(results)
+    log(
+        f"Total files: {len(raw_files):,}",
+        f"Blacklisted: {len(BLACKLIST):,}",
+        *(f"Code {i}:     {(results==i).sum():,}" for i in np.unique(results))
+    )
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
