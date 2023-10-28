@@ -3,7 +3,6 @@ import random
 import shutil
 import warnings
 from argparse import ArgumentParser
-from datetime import datetime
 from typing import Type
 
 import numpy as np
