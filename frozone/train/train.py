@@ -68,8 +68,8 @@ def train(job: JobDescription):
     )
     log("Loading data")
     with TT.profile("Load data"):
-        train_dataset = load_data_files(train_npz_files, train_cfg, max_num_files=train_cfg.max_num_data_files)
-        test_dataset = load_data_files(test_npz_files, train_cfg, max_num_files=train_cfg.max_num_data_files)
+        train_dataset, _ = load_data_files(train_npz_files, train_cfg, max_num_files=train_cfg.max_num_data_files)
+        test_dataset, _ = load_data_files(test_npz_files, train_cfg, max_num_files=train_cfg.max_num_data_files)
     log(
         "Loaded datasets",
         "Used train files:  %s" % thousands_seperators(len(train_dataset)),

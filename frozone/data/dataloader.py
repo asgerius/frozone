@@ -27,18 +27,22 @@ def load_data_files(
     train_cfg: Optional[TrainConfig],
     max_num_files=0,
     year=0,
-) -> Dataset:
+    shuffle=True,
+) -> tuple[Dataset, list[str]]:
     """ Loads data for an environment, which is returned as a list of (X, U, S, R) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
 
     max_num_files = max_num_files or None
     npz_files = copy(npz_files)
-    random.shuffle(npz_files)
+    if shuffle:
+        random.shuffle(npz_files)
 
     sets = list()
+    used_files = list()
     for npz_file in npz_files:
         arrs = np.load(npz_file, allow_pickle=True)
         metadata, X, U, S, R = arrs["metadata"].item(), arrs["X"], arrs["U"], arrs["S"], arrs["R"]
+        # print(npz_file, "\n", metadata.raw_file)
         if train_cfg and train_cfg.phase and train_cfg.get_env() is FloatZone:
             is_phase = FloatZone.is_phase(train_cfg.phase, S)
             X = X[is_phase]
@@ -51,10 +55,11 @@ def load_data_files(
             # Also ignore too old data
             continue
         sets.append((metadata, (X, U, S, R)))
+        used_files.append(npz_file)
         if len(sets) == max_num_files:
-            return sets
+            return sets, used_files
 
-    return sets
+    return sets, used_files
 
 def dataset_size(dataset: Dataset) -> int:
     return sum(metadata.length for metadata, _ in dataset)

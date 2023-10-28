@@ -194,7 +194,7 @@ if __name__ == "__main__":
         log("Loading data")
         with TT.profile("Load data"):
             test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
-            test_dataset = load_data_files(test_npz_files, train_cfg, max_num_files=3*forward_cfg.num_samples, year=datetime.now().year)
+            test_dataset, _ = load_data_files(test_npz_files, train_cfg, max_num_files=3*forward_cfg.num_samples, year=datetime.now().year)
             log(
                 "Loaded dataset",
                 "Used test files:  %s" % thousands_seperators(len(test_dataset)),
