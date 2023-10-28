@@ -1,6 +1,7 @@
 """ Standalone script for analyzing environment data. """
 import math
 import os
+import random
 import shutil
 from datetime import datetime
 from glob import glob as glob  # glob
@@ -11,10 +12,9 @@ import numpy as np
 import pelutils.ds.plots as plots
 from pelutils import log
 from pelutils.parser import Parser, Option, JobDescription
-from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone.data import PHASE_TO_INDEX, PHASES, TEST_SUBDIR, Dataset, list_processed_data_files
+from frozone.data import PHASE_TO_INDEX, PHASES, PROCESSED_SUBDIR, SIMULATED_SUBDIR, TEST_SUBDIR, Dataset, list_processed_data_files
 from frozone.data.dataloader import load_data_files
 
 
@@ -70,7 +70,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                                 env.dt * np.where(is_phase)[0],
                                 R[is_phase, env.reference_variables.index(xlabel)],
                                 color="black",
-                                lw=1.5,
+                                lw=1.2,
                                 label="Reference" if phase_index == 0 else None,
                             )
 
@@ -171,6 +171,59 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
 
                 plt.suptitle(f"{phase_name} from {os.path.split(metadata.raw_file)[-1]} ({metadata.date.year})", fontsize="xx-large")
 
+def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, true_dataset: Dataset):
+
+    columns = 4
+    rows = math.ceil((len(env.XLabels) + len(env.ULabels)) / columns)
+
+    log("Plotting %i simulation samples" % len(dataset))
+    for i, ((metadata_sim, (X_sim, U_sim, S_sim, R_sim)), (metadata_true, (X_true, U_true, S_true, R_true))) in enumerate(zip(sim_dataset, true_dataset)):
+        with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_sim_{i}.png"), figsize=(15 * columns, 10 * rows)):
+            subplot_no = 0
+            is_phase = environments.FloatZone.is_phase("Cone", S_true)
+            phase_index = PHASE_TO_INDEX[512]
+
+            for xlabel in env.XLabels:
+                subplot_no += 1
+                plt.subplot(rows, columns, subplot_no)
+                plt.plot(
+                    env.dt * np.where(is_phase)[0],
+                    X_true[is_phase, xlabel],
+                    lw=1.5,
+                    label="Observed",
+                )
+                plt.plot(
+                    env.dt * np.where(is_phase)[0],
+                    X_sim[:, xlabel],
+                    lw=1.5,
+                    label="Simulated",
+                )
+                if xlabel in env.reference_variables:
+                    plt.plot(
+                        env.dt * np.where(is_phase)[0],
+                        R_true[is_phase, env.reference_variables.index(xlabel)],
+                        color="black",
+                        lw=1.2,
+                        label="Reference",
+                    )
+
+                plt.xlabel("Time [s]")
+                plt.title(env.format_label(xlabel))
+                plt.grid()
+                plt.legend()
+
+            for ulabel in env.ULabels:
+                subplot_no += 1
+                plt.subplot(rows, columns, subplot_no)
+                plt.plot(env.dt * np.where(is_phase)[0], U_true[is_phase, ulabel], lw=1.5, label="Observed")
+                plt.plot(env.dt * np.where(is_phase)[0], U_sim[:, ulabel], lw=1, label="Simulated")
+                plt.xlabel("Time [s]")
+                plt.title(env.format_label(ulabel))
+                plt.grid()
+                plt.legend()
+
+            plt.suptitle(os.path.split(metadata_true.raw_file or "Simulation")[-1] + f" ({metadata_true.date.year})", fontsize="xx-large")
+
 if __name__ == "__main__":
     parser = Parser(
         Option("env", default="FloatZone"),
@@ -183,8 +236,8 @@ if __name__ == "__main__":
     with log.log_errors:
         log.section("Loading data")
         test_data_files = list_processed_data_files(job.location, TEST_SUBDIR)
-        dataset = load_data_files(test_data_files, None, max_num_files=5, year=datetime.now().year)
-        full_dataset = load_data_files(test_data_files, None, max_num_files=len(test_data_files))
+        dataset, _ = load_data_files(test_data_files, None, max_num_files=5, year=datetime.now().year)
+        full_dataset, _ = load_data_files(test_data_files, None, max_num_files=len(test_data_files))
 
         shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
 
@@ -194,3 +247,14 @@ if __name__ == "__main__":
             analyse_processed_data_floatzone(job, dataset)
             log.section("Analysing full dataset")
             analyse_full_floatzone_data(job, full_dataset)
+            if SIMULATED_SUBDIR in os.listdir(job.location):
+                log.section("Analysing simulated data")
+                sim_data_files = list_processed_data_files(job.location, TEST_SUBDIR, SIMULATED_SUBDIR)
+                random.shuffle(sim_data_files)
+                sim_data_files = sim_data_files[:5]
+                true_data_files = [s.replace(f"/{SIMULATED_SUBDIR}/", f"/{PROCESSED_SUBDIR}/") for s in sim_data_files]
+                sim_dataset, _ = load_data_files(sim_data_files, None, year=0, shuffle=False)
+                true_dataset, _ = load_data_files(true_data_files, None, year=0, shuffle=False)
+                for (metadata_sim, _), (metadata_true, _) in zip(sim_dataset, true_dataset, strict=True):
+                    assert metadata_sim.raw_file == metadata_true.raw_file, f"{metadata_sim.raw_file} == {metadata_true.raw_file}"
+                analyse_simulated_data_floatzone(job, sim_dataset, true_dataset)
