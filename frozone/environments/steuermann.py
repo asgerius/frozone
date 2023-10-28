@@ -20,9 +20,9 @@ class Steuermann(Environment):
         UpperZone = 2
         LowerZone = 3
         MeltVolume = 4
-        CrystalAngle = 5
-        MeltNeckDia = 6
-        PolyAngle = 7
+        MeltNeckDia = 5
+        PolyAngle = 6
+        CrystalAngle = 7
 
     class ULabels(enum.IntEnum):
         GeneratorVoltage = 0
@@ -68,9 +68,9 @@ class Steuermann(Environment):
         X[:, cls.XLabels.UpperZone] = 7
         X[:, cls.XLabels.LowerZone] = 14
         X[:, cls.XLabels.MeltVolume] = 65
-        X[:, cls.XLabels.CrystalAngle] = 0
         X[:, cls.XLabels.MeltNeckDia] = 20
         X[:, cls.XLabels.PolyAngle] = 0
+        X[:, cls.XLabels.CrystalAngle] = 0
         return X
 
     @classmethod
@@ -94,7 +94,7 @@ class Steuermann(Environment):
         U = np.stack([U[:, 0]] * timesteps, axis=1)
 
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
-        Z[..., cls.ZLabels.Time] = np.arange(0, timesteps) * cls.dt
+        Z[..., cls.ZLabels.Time] = cls.dt * np.arange(timesteps)
         Z[:, 0, cls.ZLabels.MeltingRate] = U[:, 0, cls.ULabels.PolyPullRate] / 60
         Z[:, 0, cls.ZLabels.CrystallizationRate] = U[:, 0, cls.ULabels.CrystalPullRate] / 60
         Z[:, 0, cls.ZLabels.TdGeneratorVoltage] = U[:, 0, cls.ULabels.GeneratorVoltage]
