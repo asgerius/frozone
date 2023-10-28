@@ -325,7 +325,7 @@ def f(x, u, z):
     vGr_mms = x[6]
     MeltAngle_rad = x[7]
     Ud_kV = x[8]
-    Rn_mm = x[9]
+    # Rn_mm = x[9]
 
     Ua_kV = u[0]
     vf_mms = u[1]
@@ -333,9 +333,9 @@ def f(x, u, z):
 
     FeedAngle_rad = z[0]
 
-    Rf_cm = Rf_mm / 10
-    Rc_cm = Rc_mm / 10
-    V_mm3 = V_cm3 * 1000
+    # Rf_cm = Rf_mm / 10
+    # Rc_cm = Rc_mm / 10
+    # V_mm3 = V_cm3 * 1000
     Rf2_mm2 = Rf_mm ** 2
     Rc2_mm2 = Rc_mm ** 2
 
@@ -351,11 +351,11 @@ def f(x, u, z):
     V_mm3_dot = (rohS / rohM) * (pi * Rf2_mm2 * vMe_mms - aG_fr * Vfr_mm3_dot) - (rohS / rohM) * (
             pi * Rc2_mm2 * vGr_mms) - ((rohM - rohS) / rohM) * aG_bo * Vbo_mm3_dot
     V_cm3_dot = V_mm3_dot / 1000
-    Pc_loss_kW = loss_pC * GetPowerLoss_Crys_kW(Rc_mm)
+    # Pc_loss_kW = loss_pC * GetPowerLoss_Crys_kW(Rc_mm)
     Pf_loss_kW_dot = loss_pF * GetPowerLoss_Poly_kW_dot(Rf_mm, Rf_mm_dot)
     Pc_loss_kW_dot = loss_pC * GetPowerLoss_Crys_kW_dot(Rc_mm, Rc_mm_dot)
-    Pf_kW = GetPowerF_kW(Ud_kV, Rf_mm, Hf_mm)
-    Pc_kW = GetPowerC_kW(Ud_kV, Rc_mm, Hc_mm)
+    # Pf_kW = GetPowerF_kW(Ud_kV, Rf_mm, Hf_mm)
+    # Pc_kW = GetPowerC_kW(Ud_kV, Rc_mm, Hc_mm)
     Pf_kW_dot = GetPowerF_kW_dot(Ud_kV, Ud_kV_dot, Rf_mm, Rf_mm_dot, Hf_mm, Hf_mm_dot)
     Pc_kW_dot = GetPowerC_kW_dot(Ud_kV, Ud_kV_dot, Rc_mm, Rc_mm_dot, Hc_mm, Hc_mm_dot)
     Pf_flux_kW_dot = GetPowerFlux_Poly_kW_dot(Rf_mm, Rf_mm_dot)
