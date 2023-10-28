@@ -24,6 +24,7 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
 
     n = (tend - tstart) / h
     for i in range(1, int(n + 1)):
+        x_orig = x.copy()
         k1 = h * f(x, **kwargs)
         k2 = h * f(x + 0.5 * k1, **kwargs)
         k3 = h * f(x + 0.5 * k2, **kwargs)
@@ -31,8 +32,12 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
 
         x = x + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
-    return x
+        max_var = 0.2
+        for index in [0, 7, 9]:
+            if x[index] <= 0 or not ((1 - max_var) * x_orig[index] <= x[index] <= (1 + max_var) * x_orig[index]):
+                x[index] = x_orig[index]
 
+    return x
 
 def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
     """
@@ -44,7 +49,7 @@ def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
 
     sys = System()
 
-    x_pred = rungekutta(t0, t1, (t1 - t0) / 8, f, x=x, u=u, **kwargs)
+    x_pred = rungekutta(t0, t1, (t1 - t0) / 10, f, x=x, u=u, **kwargs)
 
     sys.set_within_limits(x_pred)
 
