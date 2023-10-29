@@ -112,7 +112,24 @@ BLACKLIST = {
     "M43/43_Automation_Archive_2022/43-2206_Automation.txt",
     "M41/41_Automation_Archive_2020/41-1464_Automation.txt",
     "M33/33_Automation_Archive_2020/33-1961_Automation.txt",
+
+    "M38/38_Automation_Archive_2017/38-0572_Automation.txt",
+    "M35/35_Automation_Archive_2020/35-0151_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-0814_Automation.txt",
+    "M31/31-0975_Automation.txt",
+    "M38/38_Automation_Archive_2022/38-2097_Automation.txt",
+    "M43/43-2321_Automation.txt",
+    "M34/34_Automation_Archive_2016/34-0782_Automation.txt",
+    "M36/36_Automation_Archive_2016/36-0248_Automation.txt",
+    "M34/34_Automation_Archive_2018/34-1158_Automation.txt",
+    "M31/31-0905_Automation.txt",
+    "M41/41_Automation_Archive_2018/41-0793_Automation.txt",
+    "M41/41_Automation_Archive_2018/41-0737_Automation.txt",
+    "M38/38_Automation_Archive_2016/38-0309_Automation.txt",
+    "M43/43_Automation_Archive_2018/43-0877_Automation.txt",
+    "M36/36_Automation_Archive_2017/36-0379_Automation.txt",
 }
+
 MACHINES = ("M31", "M32", "M33", "M34", "M35", "M36", "M37", "M38", "M41", "M43", "M52", "M54")
 
 def get_phase_slices(fname: str, df: pd.DataFrame) -> dict[int, slice]:
