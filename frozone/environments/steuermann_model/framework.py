@@ -26,9 +26,8 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
 
         x = x + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
-        max_var = 1
         for index in [0, 7, 9]:
-            if x[index] <= 0 or not ((1 - max_var) * x_orig[index] <= x[index] <= (1 + max_var) * x_orig[index]):
+            if x[index] <= 0:
                 x[index] = x_orig[index]
 
     return x
