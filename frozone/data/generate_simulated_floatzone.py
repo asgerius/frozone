@@ -103,8 +103,7 @@ if __name__ == "__main__":
     parser.add_argument("data_path")
     args = parser.parse_args()
 
-    bad_files = [
-        "/work3/s183912/floatzone/data-floatzone/Raw/M34/34_Automation_Archive_2018/34-1317_Automation.txt",
-    ]
+    log.configure(os.path.join(args.data_path, "simulate.log"))
 
-    generate(args.data_path)
+    with log.log_errors:
+        generate(args.data_path)
