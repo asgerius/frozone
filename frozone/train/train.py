@@ -8,7 +8,7 @@ from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
 from frozone import device, amp_context, cuda_sync
-from frozone.data import list_processed_data_files
+from frozone.data import list_processed_data_files, PROCESSED_SUBDIR, SIMULATED_SUBDIR
 from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.eval import ForwardConfig, SimulationConfig
@@ -35,6 +35,7 @@ def train(job: JobDescription):
         env = job.env,
         data_path = job.data_path,
         phase = job.phase,
+        use_sim_data = job.use_sim_data,
         history_window = job.history_window,
         prediction_window = job.prediction_window,
         history_interp = job.history_interp,
@@ -57,8 +58,9 @@ def train(job: JobDescription):
     env: Type[environments.Environment] = getattr(environments, train_cfg.env)
     log("Got environment %s" % env.__name__)
 
-    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR)
-    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
+    data_subdir = SIMULATED_SUBDIR if train_cfg.use_sim_data else PROCESSED_SUBDIR
+    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, where=data_subdir)
+    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, where=data_subdir)
     log(
         "Found data files",
         "Train: %s (%.2f %%)" % (thousands_seperators(len(train_npz_files)), 100 * len(train_npz_files) / (len(train_npz_files) + len(test_npz_files))),

@@ -4,7 +4,7 @@ import time
 
 import torch
 from pelutils import log, TT
-from pelutils.parser import Parser, Argument, Option
+from pelutils.parser import Parser, Argument, Option, Flag
 
 import frozone.train
 from frozone.train.train import train
@@ -14,6 +14,7 @@ options = (
     Argument("env"),
     Argument("data-path"),
     Option("phase", type=str, default=None),
+    Flag("use-sim-data"),
 
     # Training parameters
     Option("history-window", type=float, default=30),
