@@ -14,9 +14,10 @@ import torch
 from pelutils import TickTock, log, LogLevels, thousands_seperators
 
 import frozone.train
-from frozone import device_x, device_u, tensor_size
+from frozone import device, tensor_size
 from frozone.data import DataSequence, Dataset, DatasetSim
 from frozone.environments import Environment, FloatZone
+from frozone.model.floatzone_network import interpolate
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -116,8 +117,8 @@ def standardize(
         U[...] = U / (train_results.std_u + EPS)
         R[...] = (R - train_results.mean_x[env.reference_variables]) / (train_results.std_x[env.reference_variables] + EPS)
 
-def numpy_to_torch_device(*args: np.ndarray, device: torch.device) -> list[torch.Tensor]:
-    return [torch.from_numpy(x).to(device).float() for x in args]
+def numpy_to_torch_device(*arrays: np.ndarray) -> list[torch.Tensor]:
+    return [torch.from_numpy(x).to(device).float() for x in arrays]
 
 def _start_dataloader_thread(
     env: Type[Environment],
@@ -162,26 +163,25 @@ def _start_dataloader_thread(
             #     with tt.profile("Augment"):
             #         augment_data(X[i], U[i], train_cfg, tt)
 
+            with tt.profile("Split"):
+                Xh = X[:, :train_cfg.H]
+                Uh = U[:, :train_cfg.H]
+                Sh = S[:, :train_cfg.H]
+                Xf = X[:, train_cfg.H:]
+                Uf = U[:, train_cfg.H:]
+                Sf = S[:, train_cfg.H:]
+
+            with tt.profile("Interpolate"):
+                Xh = interpolate(train_cfg.Hi, Xh, train_cfg, h=True)
+                Uh = interpolate(train_cfg.Hi, Uh, train_cfg, h=True)
+                Sh = interpolate(train_cfg.Hi, Sh, train_cfg, h=True)
+                Xf = interpolate(train_cfg.Fi, Xf)
+                Uf = interpolate(train_cfg.Fi, Uf)
+                Sf = interpolate(train_cfg.Fi, Sf)
+
             with tt.profile("To device"):
-                X_dx, U_dx, S_dx = numpy_to_torch_device(X, U, S, device=device_x)
-                X_du, U_du, S_du = numpy_to_torch_device(X, U, S, device=device_u)
-            with tt.profile("Split and contiguous"):
-                Xh_dx = X_dx[:, :train_cfg.H].contiguous()
-                Uh_dx = U_dx[:, :train_cfg.H].contiguous()
-                Sh_dx = S_dx[:, :train_cfg.H].contiguous()
-                Xf_dx = X_dx[:, train_cfg.H:].contiguous()
-                Uf_dx = U_dx[:, train_cfg.H:].contiguous()
-                Sf_dx = S_dx[:, train_cfg.H:].contiguous()
-                Xh_du = X_du[:, :train_cfg.H].contiguous()
-                Uh_du = U_du[:, :train_cfg.H].contiguous()
-                Sh_du = S_du[:, :train_cfg.H].contiguous()
-                Xf_du = X_du[:, train_cfg.H:].contiguous()
-                Uf_du = U_du[:, train_cfg.H:].contiguous()
-                Sf_du = S_du[:, train_cfg.H:].contiguous()
-            buffer.put((
-                (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx),
-                (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du),
-            ))
+                Xh, Uh, Sh, Xf, Uf, Sf = numpy_to_torch_device(Xh, Uh, Sh, Xf, Uf, Sf)
+            buffer.put((Xh, Uh, Sh, Xf, Uf, Sf))
 
             tt.end_profile()
 

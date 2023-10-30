@@ -19,10 +19,8 @@ class FzConfig(DataStorage):
     dz: int  # Number of latent variables
     dr: int  # Number of reference variables
 
-    H: int  # Number of history steps
-    F: int  # Number of target steps
-    H_interp: int
-    F_interp: int
+    Hi: int  # Number of interpolated history steps
+    Fi: int  # Number of interpolated target steps
 
     encoder_name: str
     decoder_name: str
@@ -45,10 +43,8 @@ class FzConfig(DataStorage):
         assert self.du > 0
         assert self.ds >= 0
         assert self.dz > 0
-        assert self.H > 0
-        assert self.F > 0
-        assert 0 < self.H_interp <= self.H
-        assert 0 < self.F_interp <= self.F
+        assert self.Hi > 0
+        assert self.Fi > 0
 
         assert self.fc_layer_num > 0
         assert self.fc_layer_size > 0

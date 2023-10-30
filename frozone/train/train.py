@@ -7,7 +7,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from pelutils import TT, JobDescription, log, thousands_seperators, HardwareInfo
 
 import frozone.environments as environments
-from frozone import device_x, device_u, amp_context, cuda_sync
+from frozone import device, amp_context, cuda_sync
 from frozone.data import list_processed_data_files
 from frozone.data.dataloader import dataloader, dataset_size, load_data_files, standardize
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
@@ -29,11 +29,7 @@ def build_lr_scheduler(config: TrainConfig, optimizer: torch.optim.Optimizer):
 
 def train(job: JobDescription):
 
-    log(
-        HardwareInfo.string(),
-        "Dynamics device: %s" % device_x,
-        "Control device:  %s" % device_u,
-    )
+    log(HardwareInfo.string())
 
     train_cfg = TrainConfig(
         env = job.env,
@@ -41,6 +37,8 @@ def train(job: JobDescription):
         phase = job.phase,
         history_window = job.history_window,
         prediction_window = job.prediction_window,
+        history_interp = job.history_interp,
+        prediction_interp = job.prediction_interp,
         batches = job.batches,
         batch_size = job.batch_size,
         lr = job.lr,
@@ -96,10 +94,8 @@ def train(job: JobDescription):
         dz = job.dz,
         ds = sum(env.S_bin_count),
         dr = len(env.reference_variables),
-        H = train_cfg.H,
-        F = train_cfg.F,
-        H_interp = int(train_cfg.H * job.history_interp),
-        F_interp = int(train_cfg.F * job.prediction_interp),
+        Hi = train_cfg.Hi,
+        Fi = train_cfg.Fi,
         encoder_name = job.encoder_name,
         decoder_name = job.decoder_name,
         fc_layer_num = job.fc_layer_num,
@@ -114,8 +110,8 @@ def train(job: JobDescription):
     log("Got model configuration", model_config)
 
     for i in range(train_cfg.num_models):
-        dynamics_model = FzNetwork(model_config, train_cfg, for_control=False).to(device_x)
-        control_model = FzNetwork(model_config, train_cfg, for_control=True).to(device_u)
+        dynamics_model = FzNetwork(model_config, train_cfg, for_control=False).to(device)
+        control_model = FzNetwork(model_config, train_cfg, for_control=True).to(device)
 
         models.append((dynamics_model, control_model))
         optimizers.append((
@@ -171,25 +167,24 @@ def train(job: JobDescription):
                 ensemble_loss_u = np.empty(train_cfg.num_eval_batches)
 
                 for j in range(train_cfg.num_eval_batches):
-                    (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx), \
-                    (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du) = next(train_dataloader)
-                    Xf_pred_mean = torch.zeros_like(Xf_dx)
-                    Uf_pred_mean = torch.zeros_like(Uf_du)
+                    Xh, Uh, Sh, Xf, Uf, Sf = next(train_dataloader)
+                    Xf_pred_mean = torch.zeros_like(Xf)
+                    Uf_pred_mean = torch.zeros_like(Uf)
                     for k, (dynamics_model, control_model) in enumerate(models):
                         with torch.inference_mode(), TT.profile("Forward", hits=train_cfg.num_models), amp_context():
-                            Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
-                            Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du[..., env.reference_variables])
+                            Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
+                            Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf[..., env.reference_variables])
                             Xf_pred_mean += Xf_pred
                             Uf_pred_mean += Uf_pred
-                            test_loss_x[j, k] = dynamics_model.loss(Xf_dx, Xf_pred).item()
-                            test_loss_u[j, k] = control_model.loss(Uf_du, Uf_pred).item()
+                            test_loss_x[j, k] = dynamics_model.loss(Xf, Xf_pred).item()
+                            test_loss_u[j, k] = control_model.loss(Uf, Uf_pred).item()
 
                     Xf_pred_mean /= train_cfg.num_models
                     Uf_pred_mean /= train_cfg.num_models
 
                     # This is bad code
-                    ensemble_loss_x[j] = dynamics_model.loss(Xf_dx, Xf_pred_mean).item()
-                    ensemble_loss_u[j] = control_model.loss(Uf_du, Uf_pred_mean).item()
+                    ensemble_loss_x[j] = dynamics_model.loss(Xf, Xf_pred_mean).item()
+                    ensemble_loss_u[j] = control_model.loss(Uf, Uf_pred_mean).item()
 
                 for k in range(train_cfg.num_models):
                     train_results.test_loss_x[k].append(test_loss_x[:, k].mean())
@@ -223,7 +218,7 @@ def train(job: JobDescription):
                         test_dataset,
                         train_cfg,
                         train_results,
-                        ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=0, step_size=3e-4),
+                        ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=5, step_size=3e-4),
                     )
 
                 if env.is_simulation:
@@ -285,14 +280,13 @@ def train(job: JobDescription):
             dynamics_scheduler, control_scheduler = schedulers[j]
 
             with TT.profile("Get data"):
-                (Xh_dx, Uh_dx, Sh_dx, Xf_dx, Uf_dx, Sf_dx), \
-                (Xh_du, Uh_du, Sh_du, Xf_du, Uf_du, Sf_du) = next(test_dataloader)
+                Xh, Uh, Sh, Xf, Uf, Sf = next(test_dataloader)
             with TT.profile("Step"), amp_context():
-                Xf_pred = dynamics_model(Xh_dx, Uh_dx, Sh_dx, Sf_dx, Uf=Uf_dx)
-                Uf_pred = control_model(Xh_du, Uh_du, Sh_du, Sf_du, Xf=Xf_du[..., env.reference_variables])
+                Xf_pred = dynamics_model(Xh, Uh, Sh, Sf, Uf=Uf)
+                Uf_pred = control_model(Xh, Uh, Sh, Sf, Xf=Xf[..., env.reference_variables])
 
-                loss_x = dynamics_model.loss(Xf_dx, Xf_pred)
-                loss_u = control_model.loss(Uf_du, Uf_pred)
+                loss_x = dynamics_model.loss(Xf, Xf_pred)
+                loss_u = control_model.loss(Uf, Uf_pred)
 
                 loss_x.backward()
                 loss_u.backward()

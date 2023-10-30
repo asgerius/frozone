@@ -42,6 +42,8 @@ class TrainConfig(DataStorage):
     # Windows are given in seconds
     history_window:     float
     prediction_window:  float
+    history_interp:     float
+    prediction_interp:  float
 
     # Training stuff
     batches:            int
@@ -63,6 +65,11 @@ class TrainConfig(DataStorage):
     augment_prob:       float
 
     def __post_init__(self):
+        env = self.get_env()
+        assert env.dt <= self.history_window
+        assert env.dt <= self.prediction_window
+        assert 0 <= self.history_interp <= 1
+        assert 0 <= self.prediction_interp <= 1
         assert 0 <= self.epsilon <= 1
         assert 0 <= self.augment_prob <= 1
 
@@ -73,6 +80,14 @@ class TrainConfig(DataStorage):
     @property
     def F(self) -> int:
         return int(self.prediction_window / self.get_env().dt)
+
+    @property
+    def Hi(self) -> int:
+        return int(self.history_window * self.history_interp / self.get_env().dt)
+
+    @property
+    def Fi(self) -> int:
+        return int(self.prediction_window * self.prediction_interp / self.get_env().dt)
 
     @property
     def num_eval_batches(self) -> int:

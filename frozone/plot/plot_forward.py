@@ -95,33 +95,33 @@ def plot_forward(
                     if pred is not None and plot_preds:
                         for l in range(train_cfg.num_models):
                             plt.plot(
-                                timesteps[seq_mid-1:seq_end],
-                                pred[i, l, seq_mid-1:seq_end, label],
+                                timesteps[seq_mid:seq_end],
+                                pred[i, l, seq_mid:seq_end, label],
                                 alpha=0.7,
                                 color="grey",
                                 label="Individual predictions" if k == l == 0 else None,
                             )
                         plt.plot(
-                            timesteps[seq_mid-1:seq_end],
-                            pred[i, :, seq_mid-1:seq_end, label].mean(axis=0),
+                            timesteps[seq_mid:seq_end],
+                            pred[i, :, seq_mid:seq_end, label].mean(axis=0),
                             lw=1.2,
                             color=plots.tab_colours[1],
                             label="Ensemble" if k == 0 else None,
                         )
 
-                    # if pred_opt is not None and plot_preds:
-                    #     plt.plot(
-                    #         timesteps[seq_mid-1:seq_end],
-                    #         pred_opt[i, seq_mid-1:seq_end, label],
-                    #         lw=1.2,
-                    #         color=plots.tab_colours[2],
-                    #         label="Ensemble (opt)" if k == 0 else None,
-                    #     )
+                    if pred_opt is not None and plot_preds:
+                        plt.plot(
+                            timesteps[seq_mid:seq_end],
+                            pred_opt[i, seq_mid:seq_end, label],
+                            lw=1.2,
+                            color=plots.tab_colours[2],
+                            label="Ensemble (opt)" if k == 0 else None,
+                        )
 
                     if pred_ref is not None and plot_preds:
                         plt.plot(
-                            timesteps[seq_mid-1:seq_end],
-                            pred_ref[i, seq_mid-1:seq_end, label],
+                            timesteps[seq_mid:seq_end],
+                            pred_ref[i, seq_mid:seq_end, label],
                             lw=1.2,
                             color="red",
                             label="Ensemble (ref)" if k == 0 else None,

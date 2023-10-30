@@ -9,11 +9,11 @@ from pelutils import TT, log, LogLevels, thousands_seperators
 from pelutils.parser import Parser
 
 import frozone.environments as environments
-from frozone import cuda_sync, device_x, device_u
+from frozone import cuda_sync
 from frozone.data import TEST_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import Dataset, dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import ForwardConfig
-from frozone.model.floatzone_network import FzNetwork
+from frozone.model.floatzone_network import FzNetwork, interpolate
 from frozone.plot.plot_forward import plot_forward
 from frozone.train import TrainConfig, TrainResults
 
@@ -30,7 +30,7 @@ def forward(
 
     for dm, cm in models:
         dm.requires_grad_(False)
-        cm.requires_grad_(False).to(device_x)
+        cm.requires_grad_(False)
 
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
@@ -59,7 +59,7 @@ def forward(
     U_pred_opt = U_true.copy()
     U_pred_ref = U_true.copy()
     X_true, U_true, S_true, X_pred, U_pred, U_pred_ref, R_true = numpy_to_torch_device(
-        X_true, U_true, S_true, X_pred, U_pred, U_pred_ref, R_true, device=device_x,
+        X_true, U_true, S_true, X_pred, U_pred, U_pred_ref, R_true,
     )
     # This is just for testing purposes
     # R_true = torch.rand_like(R_true)
@@ -79,67 +79,80 @@ def forward(
 
         for i, (dynamics_model, control_model) in enumerate(models):
 
+            Xh_interp = interpolate(train_cfg.Hi, X_true[:, seq_start:seq_mid], train_cfg, h=True)
+            Uh_interp = interpolate(train_cfg.Hi, U_true[:, seq_start:seq_mid], train_cfg, h=True)
+            Sh_interp = interpolate(train_cfg.Hi, S_true[:, seq_start:seq_mid], train_cfg, h=True)
+            Xf_interp = interpolate(train_cfg.Fi, X_true[:, seq_mid:seq_end])
+            Uf_interp = interpolate(train_cfg.Fi, U_true[:, seq_mid:seq_end])
+            Sf_interp = interpolate(train_cfg.Fi, S_true[:, seq_mid:seq_end])
+            Rf_interp = interpolate(train_cfg.Fi, R_true[:, seq_mid:seq_end])
+
             if i == 0:
-                X_true_smooth[:, seq_start:seq_mid] = dynamics_model.smoothen_h(X_true[:, seq_start:seq_mid])
-                X_true_smooth[:, seq_mid:seq_end] = dynamics_model.smoothen_f(X_true[:, seq_mid:seq_end])
-                U_true_smooth[:, seq_start:seq_mid] = control_model.smoothen_h(U_true[:, seq_start:seq_mid])
-                U_true_smooth[:, seq_mid:seq_end] = control_model.smoothen_f(U_true[:, seq_mid:seq_end])
+                X_true_smooth[:, seq_start:seq_mid] = interpolate(train_cfg.H, dynamics_model.smoothen_h(Xh_interp))
+                X_true_smooth[:, seq_mid:seq_end]   = interpolate(train_cfg.F, dynamics_model.smoothen_f(Xf_interp))
+                U_true_smooth[:, seq_start:seq_mid] = interpolate(train_cfg.H, control_model.smoothen_h(Uh_interp))
+                U_true_smooth[:, seq_mid:seq_end]   = interpolate(train_cfg.F, control_model.smoothen_f(Uf_interp))
 
             with TT.profile("Dynamics"), torch.inference_mode():
-                X_pred[:, i, seq_mid:seq_end] = dynamics_model(
-                    X_true[:, seq_start:seq_mid],
-                    U_true[:, seq_start:seq_mid],
-                    S_true[:, seq_start:seq_mid],
-                    Sf = S_true[:, seq_mid:seq_end],
-                    Uf = U_true[:, seq_mid:seq_end],
+                X_pred_interp = dynamics_model(
+                    Xh_interp,
+                    Uh_interp,
+                    Sh_interp,
+                    Sf = Sf_interp,
+                    Uf = Uf_interp,
                 )
+                X_pred[:, i, seq_mid:seq_end] = interpolate(train_cfg.F, X_pred_interp)
                 cuda_sync()
 
             with TT.profile("Control"), torch.inference_mode():
-                U_pred[:, i, seq_mid:seq_end] = control_model(
-                    X_true[:, seq_start:seq_mid],
-                    U_true[:, seq_start:seq_mid],
-                    S_true[:, seq_start:seq_mid],
-                    Sf = S_true[:, seq_mid:seq_end],
-                    Xf = X_true[:, seq_mid:seq_end, env.reference_variables],
+                U_pred_interp = control_model(
+                    Xh_interp,
+                    Uh_interp,
+                    Sh_interp,
+                    Sf = Sf_interp,
+                    Xf = Xf_interp[..., env.reference_variables],
                 )
+                U_pred[:, i, seq_mid:seq_end] = interpolate(train_cfg.F, U_pred_interp)
                 cuda_sync()
 
             with TT.profile("Control (optimized)"), torch.inference_mode(False):
 
                 for k in range(forward_cfg.num_samples):
 
-                    Uf = U_pred[[k], i, seq_mid:seq_end].clone()
-                    Uf.requires_grad_()
-                    optimizer = torch.optim.AdamW([Uf], lr=forward_cfg.step_size)
+                    Uf_interp = U_pred_interp[[k]].clone()
+                    Uf_interp.requires_grad_()
+                    optimizer = torch.optim.AdamW([Uf_interp], lr=forward_cfg.step_size)
 
                     for _ in range(forward_cfg.opt_steps):
                         Xf = dynamics_model(
-                            X_true[[k], seq_start:seq_mid],
-                            U_true[[k], seq_start:seq_mid],
-                            S_true[[k], seq_start:seq_mid],
-                            Sf = S_true[[k], seq_mid:seq_end],
-                            Uf = Uf,
+                            Xh_interp[[k]],
+                            Uh_interp[[k]],
+                            Sh_interp[[k]],
+                            Sf = Sf_interp[[k]],
+                            Uf = Uf_interp,
                         )
 
-                        loss = dynamics_model.loss(X_true[[k], seq_mid:seq_end], Xf)
+                        loss = dynamics_model.loss(Xf_interp[[k]], Xf)
                         loss.backward()
 
                         optimizer.step()
                         optimizer.zero_grad()
 
-                    U_pred_opt[[k], seq_mid:seq_end] += Uf.detach().cpu().numpy() / train_cfg.num_models
+                    Uf = interpolate(train_cfg.F, Uf_interp.detach()).cpu().numpy()
+
+                    U_pred_opt[[k], seq_mid:seq_end] += Uf / train_cfg.num_models
 
                 cuda_sync()
 
             with TT.profile("Control (reference)"), torch.inference_mode():
-                U_pred_ref[:, seq_mid:seq_end] += control_model(
-                    X_true[:, seq_start:seq_mid],
-                    U_true[:, seq_start:seq_mid],
-                    S_true[:, seq_start:seq_mid],
-                    Sf = S_true[:, seq_mid:seq_end],
-                    Xf = R_true[:, seq_mid:seq_end],
-                ).squeeze() / train_cfg.num_models
+                U_pred_interp = control_model(
+                    Xh_interp,
+                    Uh_interp,
+                    Sh_interp,
+                    Sf = Sf_interp,
+                    Xf = Rf_interp,
+                )
+                U_pred_ref[:, seq_mid:seq_end] += interpolate(train_cfg.F, U_pred_interp.squeeze()) / train_cfg.num_models
                 cuda_sync()
 
     TT.end_profile()
@@ -166,7 +179,7 @@ def forward(
 
     for dm, cm in models:
         dm.requires_grad_(True)
-        cm.requires_grad_(True).to(device_u)
+        cm.requires_grad_(True)
 
 if __name__ == "__main__":
     parser = Parser()
@@ -181,7 +194,7 @@ if __name__ == "__main__":
         train_cfg = TrainConfig.load(job.location)
         train_results = TrainResults.load(job.location)
         env = train_cfg.get_env()
-        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=0, step_size=1e-2)
+        forward_cfg = ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=5, step_size=1e-2)
         forward_cfg.save(job.location)
 
         log("Loading models")

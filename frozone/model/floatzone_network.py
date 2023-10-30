@@ -3,15 +3,43 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+import numpy as np
 import torch
 
 import frozone.model.encoders_h as encoders_h
 import frozone.model.encoders_f as encoders_f
 import frozone.model.decoders as decoders
-from frozone import device_x, device_u
+from frozone import device
 from frozone.model import FzConfig, _FloatzoneModule
 from frozone.train import TrainConfig, history_only_control, history_only_process
 
+
+def interpolate(n: int, fp: np.ndarray | torch.Tensor, train_cfg: Optional[TrainConfig]=None, *, h=False) -> torch.Tensor:
+
+    if h:
+        scale = (train_cfg.Hi - (train_cfg.Fi - 1) / (train_cfg.Fi - 1)) / (train_cfg.Hi - 1)
+    else:
+        scale = 1
+
+    is_numpy = isinstance(fp, np.ndarray)
+    if is_numpy:
+        fp = torch.from_numpy(fp)
+
+    fp = fp.transpose(-2, -1)
+    x = torch.arange(fp.shape[-1], device=fp.device)
+    a = fp[..., 1:] - fp[..., :-1]
+    b = fp[..., :-1] - a * x[..., :-1]
+
+    xi = scale * torch.linspace(0, fp.shape[-1] - 1, n, device=fp.device)
+    if scale == 1:
+        xi[-1] -= 1
+    index = xi.long()
+    yi = a[..., index] * xi + b[..., index]
+    if scale == 1:
+        yi[..., -1] = fp[..., -1]
+    yi = yi.transpose(-2, -1)
+
+    return yi.numpy() if is_numpy else yi
 
 class FzNetwork(_FloatzoneModule):
 
@@ -27,8 +55,8 @@ class FzNetwork(_FloatzoneModule):
         self.Ef: encoders_f.EncoderF = getattr(encoders_f, encoder_name)(config, config.du if self.for_dynamics else config.dr)
         self.D:  decoders.Decoder    = getattr(decoders, self.config.decoder_name)(config, is_x=self.for_dynamics)
 
-        self.smoothing_kernel_h = self._build_low_pass_matrix(config.H)
-        self.smoothing_kernel_f = self._build_low_pass_matrix(config.F)
+        self.smoothing_kernel_h = self._build_low_pass_matrix(config.Hi)
+        self.smoothing_kernel_f = self._build_low_pass_matrix(config.Fi)
 
         # Build loss functions
         if train_cfg.loss_fn == "l1":
@@ -38,7 +66,7 @@ class FzNetwork(_FloatzoneModule):
         elif train_cfg.loss_fn == "huber":
             _loss_fn = torch.nn.HuberLoss(reduction="none", delta=train_cfg.huber_delta)
             loss_fn = lambda target, input: 1 / train_cfg.huber_delta * _loss_fn(target, input)
-        self.loss_weight = torch.ones(train_cfg.F)
+        self.loss_weight = torch.ones(train_cfg.Fi)
         self.loss_weight = self.loss_weight / self.loss_weight.sum()
 
         self.target_weights_process = history_only_process(train_cfg.get_env())
@@ -87,20 +115,12 @@ class FzNetwork(_FloatzoneModule):
         Uh_smooth = self.smoothen_h(Uh)
         h_smooth = Xh_smooth if self.for_dynamics else Uh_smooth
 
-        h_scale = (self.config.H - (self.config.F - 1) / (self.config.F_interp - 1)) / (self.config.H - 1)
-        Xh_interp = self.interpolate(self.config.H_interp, Xh, h_scale)
-        Uh_interp = self.interpolate(self.config.H_interp, Uh, h_scale)
-        Sh_interp = self.interpolate(self.config.H_interp, Sh, h_scale)
-
         f = Uf if self.for_dynamics else Xf
-        Sf_interp = self.interpolate(self.config.F_interp, Sf)
-        f_interp = self.interpolate(self.config.F_interp, f)
 
-        zh = self.Eh(Xh_interp, Uh_interp, Sh_interp)
-        Zf = self.Ef(Sf_interp, Xf_or_Uf=f_interp)
+        zh = self.Eh(Xh, Uh, Sh)
+        Zf = self.Ef(Sf, Xf_or_Uf=f)
 
-        pred_interp = self.D(zh, Zf)
-        pred = self.interpolate(self.config.F, pred_interp)
+        pred = self.D(zh, Zf)
         pred = pred + h_smooth[:, -1].unsqueeze(dim=1)
         pred = self.smoothen_f(pred)
 
@@ -141,22 +161,6 @@ class FzNetwork(_FloatzoneModule):
         self.D.to(device)
         return super().to(device)
 
-    @staticmethod
-    def interpolate(n: int, fp: torch.Tensor, scale: float = 1) -> torch.Tensor:
-        fp = fp.transpose(-2, -1)
-        x = torch.arange(fp.shape[-1], device=fp.device)
-        a = fp[..., 1:] - fp[..., :-1]
-        b = fp[..., :-1] - a * x[..., :-1]
-
-        xi = scale * torch.linspace(0, fp.shape[-1] - 1, n, device=fp.device)
-        if scale == 1:
-            xi[-1] -= 1
-        index = xi.long()
-        yi = a[..., index] * xi + b[..., index]
-        if scale == 1:
-            yi[..., -1] = fp[..., -1]
-        return yi.transpose(-2, -1)
-
     @classmethod
     def _state_dict_file_name(cls, num: int, for_control: bool) -> str:
         return cls.__name__ + ".%s.%i.pt" % ("X" if for_control else "U", num)
@@ -173,12 +177,12 @@ class FzNetwork(_FloatzoneModule):
         config = FzConfig.load(path)
         train_cfg = TrainConfig.load(path)
 
-        dynamics_model = cls(config, train_cfg, for_control=False).to(device_x)
-        control_model = cls(config, train_cfg, for_control=True).to(device_u)
+        dynamics_model = cls(config, train_cfg, for_control=False).to(device)
+        control_model = cls(config, train_cfg, for_control=True).to(device)
 
         path = os.path.join(path, "models")
 
-        dynamics_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, False)), map_location=device_x))
-        control_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, True)), map_location=device_u))
+        dynamics_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, False)), map_location=device))
+        control_model.load_state_dict(torch.load(os.path.join(path, cls._state_dict_file_name(num, True)), map_location=device))
 
         return dynamics_model, control_model

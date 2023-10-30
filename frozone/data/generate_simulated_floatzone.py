@@ -91,6 +91,7 @@ def generate(data_path: str):
     tmp_train_cfg = TrainConfig(
         FloatZone.__name__, data_path, "Cone",
         history_window=FloatZone.dt, prediction_window=FloatZone.dt,
+        history_interp=1, prediction_interp=1,
         batches=1, batch_size=1, lr=1, num_models=1,
         max_num_data_files=0, eval_size=0, loss_fn="l1", huber_delta=0,
         epsilon=0, augment_prob=0,

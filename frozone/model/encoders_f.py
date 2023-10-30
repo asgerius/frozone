@@ -20,21 +20,21 @@ class FullyConnected(EncoderF):
     def __init__(self, config: FzConfig, input_d: int):
         super().__init__(config, input_d)
 
-        in_size = config.F_interp * (config.ds + input_d)
-        out_size = config.F_interp * config.dz
+        in_size = config.Fi * (config.ds + input_d)
+        out_size = config.Fi * config.dz
 
         self.layers = nn.Sequential(*self.build_fully_connected(in_size, out_size))
 
     def forward(self, Sf: torch.FloatTensor, Xf_or_Uf: torch.FloatTensor) -> torch.FloatTensor:
         x = self.concat_to_feature_vec(Sf, Xf_or_Uf)
-        return self.layers(x).view(-1, self.config.F_interp, self.config.dz)
+        return self.layers(x).view(-1, self.config.Fi, self.config.dz)
 
 class Transformer(EncoderF):
 
     def __init__(self, config: FzConfig, input_d: int):
         super().__init__(config, input_d)
 
-        positional_encoding = self.build_positional_encoding(config.F_interp)
+        positional_encoding = self.build_positional_encoding(config.Fi)
         self.transformer = BaseTransformer(config, config.ds + input_d, positional_encoding)
 
     def forward(self, Sf: torch.FloatTensor, Xf_or_Uf: torch.FloatTensor) -> torch.FloatTensor:
