@@ -186,16 +186,17 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int,
     for phase, slice_ in zip(sorted_phases, sorted_slices):
         slice_data = slice(slice_.start - offset, slice_.stop - offset)
 
-        X[slice_data, FloatZone.XLabels.PolyDia]      = df["PolyDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.CrystalDia]   = df["CrysDia[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.UpperZone]    = df["UpperZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.LowerZone]    = df["LowerZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.FullZone]     = df["FullZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.MeltVolume]   = df["MeltVolume[mm3]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.MeltNeckDia]  = df["MeltNeck[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.PolyAngle]    = df["PolyAngle[deg]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.CrystalAngle] = df["CrysAngle[deg]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.FullPolyDia]  = df["PolyDia[mm]"].values[slice_].max() if phase >= 512 else 0
+        X[slice_data, FloatZone.XLabels.PolyDia]         = df["PolyDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalDia]      = df["CrysDia[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.UpperZone]       = df["UpperZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.LowerZone]       = df["LowerZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.FullZone]        = df["FullZone[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.MeltVolume]      = df["MeltVolume[mm3]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.MeltNeckDia]     = df["MeltNeck[mm]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.PolyAngle]       = df["PolyAngle[deg]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.CrystalAngle]    = df["CrysAngle[deg]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.FullPolyDia]     = df["PolyDia[mm]"].values[slice_].max() if phase >= 512 else 0
+        X[slice_data, FloatZone.XLabels.GeneratorHeight] = (X[slice_data, FloatZone.XLabels.FullZone] - (X[slice_data, FloatZone.XLabels.UpperZone] + X[slice_data, FloatZone.XLabels.LowerZone])).mean()
         # X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
         # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
         # X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
@@ -211,9 +212,8 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int,
         S[slice_data, len(PHASE_TO_INDEX) + MACHINES.index(machine)] = 1
         S[slice_data, -1] = 0
 
-        ref_full_index = FloatZone.reference_variables.index(FloatZone.XLabels.FullZone)
         R[slice_data, FloatZone.reference_variables.index(FloatZone.XLabels.CrystalDia)] = df["Ref_CrysDia[mm]"].values[slice_]
-        R[slice_data, ref_full_index] = df["Ref_FullZone[mm]"].values[slice_]
+        R[slice_data, FloatZone.reference_variables.index(FloatZone.XLabels.FullZone)] = df["Ref_FullZone[mm]"].values[slice_]
 
         if phase >= 16 and (X[slice_data, FloatZone.XLabels.PolyDia] <= 0).any():
             # If any X values in the snoevs phase or later are 0, this is indicative of a failed run

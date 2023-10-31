@@ -27,7 +27,7 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
         x = x + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
         for index in [0, 7, 9]:
-            if x[index] <= 0:
+            if not 0 < x[index] < 2 * x_orig[index]:
                 x[index] = x_orig[index]
 
     return x
@@ -42,7 +42,7 @@ def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
 
     sys = System()
 
-    x_pred = rungekutta(t0, t1, (t1 - t0) / 50, f, x=x, u=u, **kwargs)
+    x_pred = rungekutta(t0, t1, (t1 - t0) / 20, f, x=x, u=u, **kwargs)
 
     sys.set_within_limits(x_pred)
 

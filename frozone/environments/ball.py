@@ -10,7 +10,6 @@ from frozone.environments import Environment
 class Ball(Environment):
 
     dt = 1 / 10
-    is_simulation = True
 
     class XLabels(enum.IntEnum):
         X = 0
@@ -58,8 +57,8 @@ class Ball(Environment):
         return 1 / (1 + cls.dt / cls._reg) * np.maximum(np.vstack((f0, f1, f2)).T, 0)
 
     @classmethod
-    def sample_init_hidden_vars(cls, n: int) -> np.ndarray:
-        return np.zeros((n, len(cls.ZLabels)), dtype=cls.X_dtype)
+    def init_hidden_vars(cls, U: np.ndarray) -> np.ndarray:
+        return np.zeros((len(U), len(cls.ZLabels)), dtype=cls.X_dtype)
 
     @classmethod
     def sample_init_static_vars(cls, n: int) -> np.ndarray:

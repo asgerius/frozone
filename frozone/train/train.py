@@ -223,16 +223,16 @@ def train(job: JobDescription):
                         ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=5, step_size=3e-4),
                     )
 
-                if env.is_simulation:
-                    with TT.profile("Simulate control"):
-                        simulated_control(
-                            job.location,
-                            env,
-                            models,
-                            train_cfg,
-                            train_results,
-                            SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 0, 2e-2),
-                        )
+                with TT.profile("Simulate control"):
+                    simulated_control(
+                        job.location,
+                        env,
+                        models,
+                        test_dataset,
+                        train_cfg,
+                        train_results,
+                        SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 0, 2e-2),
+                    )
 
             for dynamics_model, control_model in models:
                 dynamics_model.train()

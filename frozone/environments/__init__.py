@@ -18,7 +18,6 @@ class Environment(abc.ABC):
     S_dtype = np.uint8
 
     dt: float
-    is_simulation: bool
 
     class XLabels(enum.IntEnum):
         """ Mutable states observable to the controller. """
@@ -91,8 +90,8 @@ class Environment(abc.ABC):
         """ Sample new control variables for next time step. """
 
     @abc.abstractclassmethod
-    def sample_init_hidden_vars(cls, n: int) -> np.ndarray:
-        pass
+    def init_hidden_vars(cls, U: np.npdarray) -> np.ndarray:
+        """ U is shape n x len(cls.ULabels). """
 
     @abc.abstractclassmethod
     def sample_init_static_vars(cls, n: int) -> np.ndarray:
@@ -101,19 +100,17 @@ class Environment(abc.ABC):
 
     @classmethod
     def simulate(cls, n: int, timesteps: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        if not cls.is_simulation:
-            raise NotImplementedError("Environment %s cannot be simulated" % cls.__name__)
 
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
-
-        Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
-        Z[:, 0] = cls.sample_init_hidden_vars(n)
 
         U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
 
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
         S[:, 0] = cls.sample_init_static_vars(n)
+
+        Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
+        Z[:, 0] = cls.init_hidden_vars(U[:, 0])
 
         for i in tqdm(range(timesteps-1), file=sys.stdout, disable=not with_tqdm):
             if i == 0:
@@ -159,5 +156,4 @@ class Environment(abc.ABC):
         return X, S, Z
 
 from .ball import Ball
-from .floatzone import FloatZone
-from .steuermann import Steuermann
+from .floatzone import FloatZone, Steuermann

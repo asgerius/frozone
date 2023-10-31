@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import frozone.environments as environments
 from frozone import device
-from frozone.data import Metadata
+from frozone.data import Metadata, Dataset
 from frozone.data.dataloader import numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork
@@ -173,6 +173,7 @@ def simulated_control(
     path: str,
     env: Type[environments.Environment],
     models: list[tuple[FzNetwork, FzNetwork]],
+    dataset: Dataset,
     train_cfg: TrainConfig,
     train_results: TrainResults,
     simulation_cfg: SimulationConfig, *,
@@ -185,10 +186,7 @@ def simulated_control(
         cm.eval().requires_grad_(False)
 
     log("Simulating data")
-    offset_steps = 0  # int(1000 / env.dt)
     timesteps = train_cfg.H + simulation_cfg.simulation_steps(env) + train_cfg.F - simulation_cfg.control_every_steps(env, train_cfg)
-    X_all, U_all, S_all, Z_all = env.simulate(simulation_cfg.num_samples, timesteps + offset_steps, with_tqdm=False)
-    dataset = [(Metadata(len(X)-offset_steps), (X[offset_steps:], U[offset_steps:], S[offset_steps:], Z[offset_steps:])) for X, U, S, Z in zip(X_all, U_all, S_all, Z_all)]
 
     log("Standardizing data")
     with TT.profile("Standardize"):
@@ -197,15 +195,19 @@ def simulated_control(
     X_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.XLabels)), dtype=env.X_dtype)
     U_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
     S_true = np.empty((simulation_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
-    Z_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.ZLabels)), dtype=env.X_dtype)
+    R_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.reference_variables)), dtype=env.X_dtype)
+    Z_by_model = np.empty((simulation_cfg.num_samples, train_cfg.num_models, timesteps, len(env.ZLabels)), dtype=env.X_dtype)
 
     for i in range(simulation_cfg.num_samples):
-        X_true[i], U_true[i], S_true[i], Z_true[i] = dataset[i]
+        metadata, (X_true[i], U_true[i], S_true[i], R_true[i]) = dataset[i]
+
+    for i in range(train_cfg.num_models):
+        Z_by_model[:, i, 0] = env.init_hidden_vars(U_true[:, 0])
 
     X_pred_by_model = np.stack([X_true] * train_cfg.num_models, axis=1)
     U_pred_by_model = np.stack([U_true] * train_cfg.num_models, axis=1)
     S_pred_by_model = np.stack([S_true] * train_cfg.num_models, axis=1)
-    Z_pred_by_model = np.stack([Z_true] * train_cfg.num_models, axis=1)
+    Z_pred_by_model = np.empty((simulation_cfg.num_samples, timesteps, len(env.XLabels)), dtype=env.X_dtype)
     X_pred = X_true.copy()
     U_pred = U_true.copy()
     S_pred = S_true.copy()
@@ -277,7 +279,6 @@ if __name__ == "__main__":
         train_results = TrainResults.load(job.location)
 
         env = train_cfg.get_env()
-        assert env.is_simulation, "Loaded environment %s is not a simulation" % env.__name__
 
         simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 0, 2e-2)
 

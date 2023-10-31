@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone.data import PROCESSED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT, Metadata
+from frozone.data import SIMULATED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT, Metadata
 
 
 warnings.filterwarnings("error")
@@ -17,13 +17,13 @@ warnings.filterwarnings("error")
 def generate(path: str, env: Type[environments.Environment], num_simulations: int, iters: int):
     X, U, S, R, Z = env.simulate(num_simulations, iters)
 
-    shutil.rmtree(os.path.join(path, PROCESSED_SUBDIR), ignore_errors=True)
+    shutil.rmtree(os.path.join(path, SIMULATED_SUBDIR), ignore_errors=True)
 
     for i in tqdm(range(num_simulations)):
         train_test_subdir = TRAIN_SUBDIR if random.random() < TRAIN_TEST_SPLIT else TEST_SUBDIR
         outpath = os.path.join(
             path,
-            PROCESSED_SUBDIR,
+            SIMULATED_SUBDIR,
             train_test_subdir,
             f"{env.__name__}_{i}.npz",
         )
