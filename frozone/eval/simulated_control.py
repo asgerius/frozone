@@ -196,13 +196,13 @@ def simulated_control(
     U_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.ULabels)), dtype=env.U_dtype)
     S_true = np.empty((simulation_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
     R_true = np.empty((simulation_cfg.num_samples, timesteps, len(env.reference_variables)), dtype=env.X_dtype)
-    Z_by_model = np.empty((simulation_cfg.num_samples, train_cfg.num_models, timesteps, len(env.ZLabels)), dtype=env.X_dtype)
+    Z_pred_by_model = np.empty((simulation_cfg.num_samples, train_cfg.num_models, timesteps, len(env.ZLabels)), dtype=env.X_dtype)
 
     for i in range(simulation_cfg.num_samples):
         metadata, (X_true[i], U_true[i], S_true[i], R_true[i]) = dataset[i]
 
     for i in range(train_cfg.num_models):
-        Z_by_model[:, i, 0] = env.init_hidden_vars(U_true[:, 0])
+        Z_pred_by_model[:, i, 0] = env.init_hidden_vars(U_true[:, 0])
 
     X_pred_by_model = np.stack([X_true] * train_cfg.num_models, axis=1)
     U_pred_by_model = np.stack([U_true] * train_cfg.num_models, axis=1)
@@ -211,11 +211,11 @@ def simulated_control(
     X_pred = X_true.copy()
     U_pred = U_true.copy()
     S_pred = S_true.copy()
-    Z_pred = Z_true.copy()
+    Z_pred = Z_pred_by_model[:, 0].copy()
     X_pred_opt = X_true.copy()
     U_pred_opt = U_true.copy()
     S_pred_opt = S_true.copy()
-    Z_pred_opt = Z_true.copy()
+    Z_pred_opt = Z_pred_by_model[:, 0].copy()
 
     controller_strategies = ControllerStrategies(models, X_true, S_true, train_cfg, train_results, simulation_cfg)
 
