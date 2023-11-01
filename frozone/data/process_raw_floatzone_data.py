@@ -191,7 +191,7 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int,
         X[slice_data, FloatZone.XLabels.UpperZone]       = df["UpperZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.LowerZone]       = df["LowerZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.FullZone]        = df["FullZone[mm]"].values[slice_]
-        X[slice_data, FloatZone.XLabels.MeltVolume]      = df["MeltVolume[mm3]"].values[slice_]
+        X[slice_data, FloatZone.XLabels.MeltVolume]      = df["MeltVolume[mm3]"].values[slice_] / 1000
         X[slice_data, FloatZone.XLabels.MeltNeckDia]     = df["MeltNeck[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.PolyAngle]       = df["PolyAngle[deg]"].values[slice_]
         X[slice_data, FloatZone.XLabels.CrystalAngle]    = df["CrysAngle[deg]"].values[slice_]
