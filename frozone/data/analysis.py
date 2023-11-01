@@ -14,7 +14,7 @@ from pelutils import log
 from pelutils.parser import Parser, Option, JobDescription
 
 import frozone.environments as environments
-from frozone.data import PHASE_TO_INDEX, PHASES, PROCESSED_SUBDIR, SIMULATED_SUBDIR, TEST_SUBDIR, Dataset, list_processed_data_files
+from frozone.data import PHASE_TO_INDEX, PHASES, PROCESSED_SUBDIR, SIMULATED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, Dataset, list_processed_data_files
 from frozone.data.dataloader import load_data_files
 
 
@@ -242,14 +242,14 @@ if __name__ == "__main__":
         shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
 
         log.section("Analysing processed data")
-        analyse_processed_data(job, env, dataset)
+        # analyse_processed_data(job, env, dataset)
         if env is environments.FloatZone:
-            analyse_processed_data_floatzone(job, dataset)
+            # analyse_processed_data_floatzone(job, dataset)
             log.section("Analysing full dataset")
-            analyse_full_floatzone_data(job, full_dataset)
+            # analyse_full_floatzone_data(job, full_dataset)
             if SIMULATED_SUBDIR in os.listdir(job.location):
                 log.section("Analysing simulated data")
-                sim_data_files = list_processed_data_files(job.location, TEST_SUBDIR, SIMULATED_SUBDIR)
+                sim_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR, SIMULATED_SUBDIR)
                 random.shuffle(sim_data_files)
                 sim_data_files = sim_data_files[:5]
                 true_data_files = [s.replace(f"/{SIMULATED_SUBDIR}/", f"/{PROCESSED_SUBDIR}/") for s in sim_data_files]

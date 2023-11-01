@@ -4,15 +4,6 @@ import numpy as np
 class ulb:
     """
     Method for declaring upper and lower bound
-
-
-    Attributes
-    ----------
-    lower : int
-        integer representing lowerbound
-    upper : int
-        integer representing upperbound
-
     """
 
     def __init__(self, lower, upper):
@@ -43,41 +34,9 @@ class ulb:
         else:
             return x
 
-
 class System:
-    """
-    This is a class with variables
-
-    Attributes
-    ----------
-    pi : int
-        first 16 digits of pi
-    phase : str
-        variable to represent the phase
-
-    Methods
-    -------
-    isvalidstate(x)
-        validate if the state x have an upperzone and lowerzone which is with in the upper and lower limits
-
-    """
 
     def __init__(self):
-        """
-
-        Define relevant system paramters
-
-        Parameter
-        _________
-        pi : int
-            16 fist digits of oi
-        phase : str
-            current phane
-        limits : list
-            limits is a list continaing upper and overlimits for state vector
-
-        """
-        self.pi = 3.141592653589793
         self.phase = 'CONE'
         self.limits = (
             ulb(0.001, 120),  # Rf[mm]
@@ -87,13 +46,12 @@ class System:
             ulb(0.0000001, 2000),  # V[cm3]
             ulb(-10, 10),  # vMe[mm/s]
             ulb(-10, 10),  # vGr[mm/s]
-            ulb(-180 * self.pi / 180, 180 * self.pi / 180),  # crystal angle[rad]
+            ulb(-np.pi, np.pi),  # crystal angle[rad]
             ulb(0.0001, 15),  # Ud[kV]
             ulb(-60, 60),  # RN[mm]
             ulb(-10 ** 8, 10 ** 8),  # vfd[mm/s]
             ulb(-10 ** 8, 10 ** 8),  # vcd[mm/s]
         )
-
 
     def set_within_limits(self, x):
         """
@@ -111,4 +69,3 @@ class System:
         for i in range(len(x)):
             x[i] = self.limits[i].iswithin(x[i])
         return x
-

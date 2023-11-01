@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import os
 import shutil
+import traceback as tb
 import warnings
 from argparse import ArgumentParser
 
@@ -34,6 +35,8 @@ def simulate(metadata: Metadata, X: np.ndarray, U: np.ndarray, S: np.ndarray, *,
             X[[i+1]], _, Z[[i+1]] = FloatZone.forward(X[[i]], U[[i]], S[[i]], Z[[i]])
         except Exception as e:
             if debug:
+                log.critical(tb.format_exc(), with_print=True)
+                breakpoint()
                 raise
             log.log_with_stacktrace(e, LogLevels.WARNING)
             return 1
