@@ -156,4 +156,5 @@ class Environment(abc.ABC):
         return X, S, Z
 
 from .ball import Ball
-from .floatzone import FloatZone, Steuermann
+from .floatzone import FloatZone
+from .steuermann import Steuermann

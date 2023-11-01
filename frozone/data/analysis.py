@@ -14,7 +14,7 @@ from pelutils import log
 from pelutils.parser import Parser, Option, JobDescription
 
 import frozone.environments as environments
-from frozone.data import PHASE_TO_INDEX, PHASES, PROCESSED_SUBDIR, SIMULATED_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, Dataset, list_processed_data_files
+from frozone.data import PHASE_TO_INDEX, PHASES, PROCESSED_SUBDIR, TRAIN_SUBDIR, Dataset, list_processed_data_files
 from frozone.data.dataloader import load_data_files
 
 
@@ -69,7 +69,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                             plt.plot(
                                 env.dt * np.where(is_phase)[0],
                                 R[is_phase, env.reference_variables.index(xlabel)],
-                                color="black",
+                                color="red",
                                 lw=1.2,
                                 label="Reference" if phase_index == 0 else None,
                             )
@@ -95,9 +95,12 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 for xlabel in env.XLabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=1.5)
+                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=1.5, label="Observed")
+                    if xlabel in env.reference_variables:
+                        plt.plot(env.dt * np.arange(len(X)), R[:, env.reference_variables.index(xlabel)], lw=1.5, color="red", label="Reference")
                     plt.xlabel("Time [s]")
                     plt.title(env.format_label(xlabel))
+                    plt.legend()
                     plt.grid()
 
                 for ulabel in env.ULabels:
@@ -242,19 +245,8 @@ if __name__ == "__main__":
         shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
 
         log.section("Analysing processed data")
-        # analyse_processed_data(job, env, dataset)
+        analyse_processed_data(job, env, dataset)
         if env is environments.FloatZone:
-            # analyse_processed_data_floatzone(job, dataset)
+            analyse_processed_data_floatzone(job, dataset)
             log.section("Analysing full dataset")
-            # analyse_full_floatzone_data(job, full_dataset)
-            if SIMULATED_SUBDIR in os.listdir(job.location):
-                log.section("Analysing simulated data")
-                sim_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR, SIMULATED_SUBDIR)
-                random.shuffle(sim_data_files)
-                sim_data_files = sim_data_files[:5]
-                true_data_files = [s.replace(f"/{SIMULATED_SUBDIR}/", f"/{PROCESSED_SUBDIR}/") for s in sim_data_files]
-                sim_dataset, _ = load_data_files(sim_data_files, None, year=0, shuffle=False)
-                true_dataset, _ = load_data_files(true_data_files, None, year=0, shuffle=False)
-                for (metadata_sim, _), (metadata_true, _) in zip(sim_dataset, true_dataset, strict=True):
-                    assert metadata_sim.raw_file == metadata_true.raw_file, f"{metadata_sim.raw_file} == {metadata_true.raw_file}"
-                analyse_simulated_data_floatzone(job, sim_dataset, true_dataset)
+            analyse_full_floatzone_data(job, full_dataset)

@@ -3,10 +3,10 @@ import enum
 import numpy as np
 from tqdm import tqdm
 
-from frozone.data import PHASES, PHASE_TO_INDEX
 from frozone.environments import Environment
 from frozone.environments.steuermann_model.framework import simulate
 from frozone.environments.steuermann_model.model.model import f
+
 
 class Steuermann(Environment):
 
@@ -17,10 +17,11 @@ class Steuermann(Environment):
         CrystalDia = 1
         UpperZone = 2
         LowerZone = 3
-        MeltVolume = 4
-        MeltNeckDia = 5
-        PolyAngle = 6
-        CrystalAngle = 7
+        FullZone = 4
+        MeltVolume = 5
+        MeltNeckDia = 6
+        PolyAngle = 7
+        CrystalAngle = 8
 
     class ULabels(enum.IntEnum):
         GeneratorVoltage = 0
@@ -33,22 +34,15 @@ class Steuermann(Environment):
         CrystallizationRate = 2
         TdGeneratorVoltage = 3
 
-    no_reference_variables = [XLabels.PolyDia, XLabels.MeltVolume,
+    no_reference_variables = [XLabels.PolyDia, XLabels.MeltVolume, XLabels.UpperZone, XLabels.LowerZone,
                               XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle]
-
-    _lower = 0.8
-    _upper = 1.2
-    control_limits = {
-        ULabels.GeneratorVoltage: (5 * _lower, 5 * _upper),
-        ULabels.PolyPullRate:     (3.8 * _lower, 3.8 * _upper),
-        ULabels.CrystalPullRate:  (3.8 * _lower, 3.8 * _upper),
-    }
 
     units = {
         ("X", XLabels.PolyDia): "mm",
         ("X", XLabels.CrystalDia): "mm",
         ("X", XLabels.UpperZone): "mm",
         ("X", XLabels.LowerZone): "mm",
+        ("X", XLabels.FullZone): "mm",
         ("X", XLabels.MeltVolume): "cm$^3$",
         ("X", XLabels.CrystalAngle): "deg",
         ("X", XLabels.MeltNeckDia): "mm",
@@ -58,25 +52,31 @@ class Steuermann(Environment):
         ("U", ULabels.CrystalPullRate): "mm/min",
     }
 
+    _lower = 0.95
+    _upper = 1.05
+
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
         X = super().sample_init_process_vars(n)
-        X[:, cls.XLabels.PolyDia] = 100
-        X[:, cls.XLabels.CrystalDia] = 100
-        X[:, cls.XLabels.UpperZone] = 7
-        X[:, cls.XLabels.LowerZone] = 14
-        X[:, cls.XLabels.MeltVolume] = 65
-        X[:, cls.XLabels.MeltNeckDia] = 20
-        X[:, cls.XLabels.PolyAngle] = 0
-        X[:, cls.XLabels.CrystalAngle] = 0
+        X[:, cls.XLabels.PolyDia] = np.random.uniform(20 * cls._lower, 20 * cls._upper, n)
+        X[:, cls.XLabels.CrystalDia] = X[:, cls.XLabels.PolyDia]
+        X[:, cls.XLabels.UpperZone] = np.random.uniform(7 * cls._lower, 7 * cls._upper, n)
+        X[:, cls.XLabels.LowerZone] = np.random.uniform(14 * cls._lower, 14 * cls._upper, n)
+        X[:, cls.XLabels.FullZone] = X[:, cls.XLabels.UpperZone] + X[:, cls.XLabels.LowerZone]
+        X[:, cls.XLabels.MeltVolume] = np.random.uniform(65 * cls._lower, 65 * cls._upper, n)
+        X[:, cls.XLabels.MeltNeckDia] = np.random.uniform(20 * cls._lower, 20 * cls._upper, n)
+        X[:, cls.XLabels.PolyAngle] = np.random.uniform(44.5, 45.5, n)  # Vary this one less
+        X[:, cls.XLabels.CrystalAngle] = np.random.uniform(45.5, 45.5, n)
         return X
 
     @classmethod
     def sample_init_control_vars(cls, n: int) -> np.ndarray:
+        lower = 0.95
+        upper = 1.05
         U = np.empty((n, len(cls.ULabels)), dtype=cls.U_dtype)
-        U[:, cls.ULabels.GeneratorVoltage] = 5
-        U[:, cls.ULabels.PolyPullRate] = 3.8
-        U[:, cls.ULabels.CrystalPullRate] = 3.8
+        U[:, cls.ULabels.GeneratorVoltage] = np.random.uniform(4.5 * cls._lower, 4.5 * cls._upper, n)
+        U[:, cls.ULabels.PolyPullRate] = np.random.uniform(1.2 * cls._lower, 1.2 * cls._upper, n)
+        U[:, cls.ULabels.CrystalPullRate] = np.random.uniform(2.4 * cls._lower, 2.4 * cls._upper, n)
         return U
 
     @classmethod
@@ -91,33 +91,42 @@ class Steuermann(Environment):
     @classmethod
     def simulate(cls, n: int, timesteps: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
+        growth_time = 4800
+        growth_iters = int(growth_time / cls.dt)
+        init_weight = 1 - np.linspace(0, 1, growth_iters)
+        end_weight = 1 - init_weight
+
+        angled_poly_time = 660
+        angled_poly_iters = int(angled_poly_time / cls.dt)
+
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
+        X[..., cls.XLabels.PolyAngle] = np.vstack(timesteps * [X[:, 0, cls.XLabels.PolyAngle]]).T
+        X[:, angled_poly_iters:, cls.XLabels.PolyAngle] = 0
+        X[..., cls.XLabels.PolyDia] = np.vstack(timesteps * [X[:, 0, cls.XLabels.PolyDia]]).T
 
         U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
         U[:, 0] = cls.sample_init_control_vars(n)
-        U = np.stack([U[:, 0]] * timesteps, axis=1)
+        max_generator_voltage = np.random.uniform(6 * cls._lower, 6 * cls._upper, n)
+        U[:, :growth_iters, cls.ULabels.GeneratorVoltage] = np.outer(U[:, 0, cls.ULabels.GeneratorVoltage], init_weight) + np.outer(max_generator_voltage, end_weight)
+        U[:, growth_iters:, cls.ULabels.GeneratorVoltage] = np.vstack((timesteps - growth_iters) * [max_generator_voltage]).T
+        max_poly_pull_rate = np.random.uniform(2.4 * cls._lower, 2.4 * cls._upper, n)
+        U[:, :growth_iters, cls.ULabels.PolyPullRate] = np.outer(U[:, 0, cls.ULabels.PolyPullRate], init_weight) + np.outer(max_poly_pull_rate, end_weight)
+        U[:, growth_iters:, cls.ULabels.PolyPullRate] = np.vstack((timesteps - growth_iters) * [max_poly_pull_rate]).T
+        U[..., cls.ULabels.CrystalPullRate] = np.vstack(timesteps * [U[:, 0, cls.ULabels.CrystalPullRate]]).T
 
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
         Z[:, 0] = cls.init_hidden_vars(U[:, 0])
 
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        for j in range(2):
-            start = j * 4800
-            response_iters = np.random.randint(int((start + 3 * 60) // cls.dt), int((start + 10 * 60) // cls.dt), n)
-
-            response_vars = np.random.randint(0, len(cls.ULabels), n)
-            response = np.random.uniform(0.92, 1.08, n)
-            for i in range(n):
-                if response_iters[i] < timesteps:
-                    U[i, response_iters[i]:, response_vars[i]] = response[i] * U[i, 0, response_vars[i]]
-
         for i in tqdm(range(timesteps-1), disable=not with_tqdm):
+            next_poly_angles = X[:, i + 1, cls.XLabels.PolyAngle].copy()
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],
                 S[:, i], Z[:, i],
             )
+            X[:, i + 1, cls.XLabels.PolyAngle] = next_poly_angles
 
         return X, U, S, X[..., cls.reference_variables].copy(), Z
 
@@ -143,6 +152,8 @@ class Steuermann(Environment):
                 X[i, cls.XLabels.CrystalAngle] * np.pi / 180,
                 Z[i, cls.ZLabels.TdGeneratorVoltage],
                 X[i, cls.XLabels.MeltNeckDia] / 2,
+                U[i, cls.ULabels.PolyPullRate] / 60,
+                U[i, cls.ULabels.CrystalPullRate] / 60,
             ])
             x_pred = simulate(
                 x0,
@@ -157,9 +168,11 @@ class Steuermann(Environment):
             Xnew[i, cls.XLabels.CrystalDia] = x_pred[1] * 2
             Xnew[i, cls.XLabels.UpperZone] = x_pred[2]
             Xnew[i, cls.XLabels.LowerZone] = x_pred[3]
+            Xnew[i, cls.XLabels.FullZone] = Xnew[i, cls.XLabels.UpperZone] + Xnew[i, cls.XLabels.LowerZone]
             Xnew[i, cls.XLabels.MeltVolume] = x_pred[4]
-            Xnew[i, cls.XLabels.CrystalAngle] = x_pred[7] * 180 / np.pi
             Xnew[i, cls.XLabels.MeltNeckDia] = x_pred[9] * 2
+            Xnew[i, cls.XLabels.PolyAngle] = X[i, cls.XLabels.PolyAngle]
+            Xnew[i, cls.XLabels.CrystalAngle] = x_pred[7] * 180 / np.pi
 
             Znew[i, cls.ZLabels.Time] = Z[i, cls.ZLabels.Time] + cls.dt
             Znew[i, cls.ZLabels.MeltingRate] = x_pred[5]

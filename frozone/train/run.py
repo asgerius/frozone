@@ -14,7 +14,6 @@ options = (
     Argument("env"),
     Argument("data-path"),
     Option("phase", type=str, default=None),
-    Flag("use-sim-data"),
 
     # Training parameters
     Option("history-window", type=float, default=30),

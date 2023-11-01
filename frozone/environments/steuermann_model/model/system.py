@@ -41,8 +41,8 @@ class System:
         self.limits = (
             ulb(0.001, 120),  # Rf[mm]
             ulb(0.001, 120),  # Rc[mm]
-            ulb(0.001, 20),  # Hf[mm]
-            ulb(0.001, 20),  # Hc[mm]
+            ulb(0.001, 500),  # Hf[mm]
+            ulb(0.001, 500),  # Hc[mm]
             ulb(0.0000001, 2000),  # V[cm3]
             ulb(-10, 10),  # vMe[mm/s]
             ulb(-10, 10),  # vGr[mm/s]

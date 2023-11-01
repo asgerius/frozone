@@ -38,7 +38,6 @@ class TrainConfig(DataStorage):
     env:                str
     data_path:          str
     phase:              Optional[str]
-    use_sim_data:       bool
 
     # Windows are given in seconds
     history_window:     float

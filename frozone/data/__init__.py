@@ -23,7 +23,6 @@ DatasetSim = List[Tuple[Metadata, DataSequenceSim]]
 TRAIN_TEST_SPLIT = 0.9
 RAW_SUBDIR = "Raw"
 PROCESSED_SUBDIR = "Processed"
-SIMULATED_SUBDIR = "Simulated"
 TRAIN_SUBDIR = "Train"
 TEST_SUBDIR = "Test"
 

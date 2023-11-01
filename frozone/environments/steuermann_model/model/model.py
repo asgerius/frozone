@@ -325,7 +325,9 @@ def f(x, u, z):
     vGr_mms = x[6]
     MeltAngle_rad = x[7]
     Ud_kV = x[8]
-    # Rn_mm = x[9]
+    Rn_mm = x[9]
+    vfd_mmPs = x[10]
+    vcd_mmPs = x[11]
 
     Ua_kV = u[0]
     vf_mms = u[1]
@@ -345,6 +347,8 @@ def f(x, u, z):
     Hc_mm_dot = vc_mms - vGr_mms
     Hg_mm_dot = Hf_mm_dot + Hc_mm_dot
     Ud_kV_dot = (Kp_u * Ua_kV - Ud_kV) / T_u
+    vfd_mmPs_dot = (vf_mms - vfd_mmPs) / T_v
+    vcd_mmPs_dot = (vc_mms - vcd_mmPs) / T_v
 
     Vbo_mm3_dot = GetVbo_mm3_dot(Rc_mm, Rc_mm_dot)
     Vfr_mm3_dot = GetVfr_mm3_dot(Rf_mm, Rf_mm_dot)
@@ -395,7 +399,10 @@ def f(x, u, z):
         vMe_mmPs_dot,
         vCr_mmPs_dot,
         MeltAngle_rad_dot,
-        Ud_kV_dot, Rn_mm_dot,
+        Ud_kV_dot,
+        Rn_mm_dot,
+        vfd_mmPs_dot,
+        vcd_mmPs_dot,
     ])
 
     return xout

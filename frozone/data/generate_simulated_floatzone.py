@@ -10,7 +10,7 @@ from pelutils import log, LogLevels
 from tqdm import tqdm
 from frozone.data.dataloader import load_data_files
 
-from frozone.data import PROCESSED_SUBDIR, SIMULATED_SUBDIR, Metadata, list_processed_data_files
+from frozone.data import PROCESSED_SUBDIR, Metadata, list_processed_data_files
 from frozone.environments import FloatZone, Steuermann
 from frozone.train import TrainConfig
 
@@ -55,7 +55,7 @@ def run_single_sim(args: tuple) -> int:
             return -1
         result_code = simulate(metadata, X, U, S, debug=debug)
         if result_code == 0:
-            save_loc = save_file.replace(f"/{PROCESSED_SUBDIR}/", f"/{SIMULATED_SUBDIR}/")
+            save_loc = save_file.replace(f"/{PROCESSED_SUBDIR}/", f"/{PROCESSED_SUBDIR}/")
             os.makedirs(os.path.split(save_loc)[0], exist_ok=True)
             np.savez(save_loc, metadata=metadata, X=X, U=U, S=S, R=R)
         else:
@@ -64,7 +64,7 @@ def run_single_sim(args: tuple) -> int:
 
 def generate(data_path: str, *, debug: bool):
 
-    shutil.rmtree(os.path.join(data_path, SIMULATED_SUBDIR), ignore_errors=True)
+    shutil.rmtree(os.path.join(data_path, PROCESSED_SUBDIR), ignore_errors=True)
 
     tmp_train_cfg = TrainConfig(
         FloatZone.__name__, data_path, "Cone", use_sim_data=True,

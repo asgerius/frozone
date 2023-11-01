@@ -3,7 +3,7 @@ import numpy as np
 from frozone.environments.steuermann_model.model.system import System
 
 
-np.set_printoptions(precision=4, linewidth=200)
+np.set_printoptions(precision=6, linewidth=200, suppress=True)
 
 def rungekutta(tstart, tend, h, f, x, **kwargs):
     """
@@ -18,6 +18,7 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
     :return:
     """
 
+    sys = System()
     n = (tend - tstart) / h
     for i in range(1, int(n + 1)):
         k1 = h * f(x, **kwargs)
@@ -26,6 +27,8 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
         k4 = h * f(x + k3, **kwargs)
 
         x = x + (k1 + 2 * k2 + 2 * k3 + k4) / 6
+
+        sys.set_within_limits(x)
 
     return x
 
@@ -37,10 +40,6 @@ def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
     :return: Future state prediction
     """
 
-    sys = System()
-
-    x_pred = rungekutta(t0, t1, (t1 - t0) / 20, f, x=x, u=u, **kwargs)
-
-    sys.set_within_limits(x_pred)
+    x_pred = rungekutta(t0, t1, (t1 - t0) / 10, f, x=x, u=u, **kwargs)
 
     return x_pred
