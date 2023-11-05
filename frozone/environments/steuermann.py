@@ -52,8 +52,10 @@ class Steuermann(Environment):
         ("U", ULabels.CrystalPullRate): "mm/min",
     }
 
-    _lower = 0.95
-    _upper = 1.05
+    _lower = 0.9
+    _upper = 1.1
+
+    _pull = 1.5
 
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
@@ -61,22 +63,18 @@ class Steuermann(Environment):
         X[:, cls.XLabels.PolyDia] = np.random.uniform(20 * cls._lower, 20 * cls._upper, n)
         X[:, cls.XLabels.CrystalDia] = X[:, cls.XLabels.PolyDia]
         X[:, cls.XLabels.UpperZone] = np.random.uniform(7 * cls._lower, 7 * cls._upper, n)
-        X[:, cls.XLabels.LowerZone] = np.random.uniform(14 * cls._lower, 14 * cls._upper, n)
+        X[:, cls.XLabels.LowerZone] = np.random.uniform(12 * cls._lower, 12 * cls._upper, n)
         X[:, cls.XLabels.FullZone] = X[:, cls.XLabels.UpperZone] + X[:, cls.XLabels.LowerZone]
         X[:, cls.XLabels.MeltVolume] = np.random.uniform(65 * cls._lower, 65 * cls._upper, n)
         X[:, cls.XLabels.MeltNeckDia] = np.random.uniform(20 * cls._lower, 20 * cls._upper, n)
-        X[:, cls.XLabels.PolyAngle] = np.random.uniform(44.5, 45.5, n)  # Vary this one less
-        X[:, cls.XLabels.CrystalAngle] = np.random.uniform(45.5, 45.5, n)
+        X[:, cls.XLabels.PolyAngle] = np.random.uniform(44.8, 45.2, n)  # Vary this one less
+        X[:, cls.XLabels.CrystalAngle] = np.random.uniform(44.8, 45.2, n)
         return X
 
     @classmethod
     def sample_init_control_vars(cls, n: int) -> np.ndarray:
-        lower = 0.95
-        upper = 1.05
         U = np.empty((n, len(cls.ULabels)), dtype=cls.U_dtype)
-        U[:, cls.ULabels.GeneratorVoltage] = np.random.uniform(4.5 * cls._lower, 4.5 * cls._upper, n)
-        U[:, cls.ULabels.PolyPullRate] = np.random.uniform(1.2 * cls._lower, 1.2 * cls._upper, n)
-        U[:, cls.ULabels.CrystalPullRate] = np.random.uniform(2.4 * cls._lower, 2.4 * cls._upper, n)
+        U[:, cls.ULabels.CrystalPullRate] = np.random.uniform(cls._pull * cls._lower, cls._pull * cls._upper, n)
         return U
 
     @classmethod
@@ -91,28 +89,21 @@ class Steuermann(Environment):
     @classmethod
     def simulate(cls, n: int, timesteps: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
-        growth_time = 4800
-        growth_iters = int(growth_time / cls.dt)
-        init_weight = 1 - np.linspace(0, 1, growth_iters)
-        end_weight = 1 - init_weight
-
-        angled_poly_time = 660
-        angled_poly_iters = int(angled_poly_time / cls.dt)
-
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
         X[..., cls.XLabels.PolyAngle] = np.vstack(timesteps * [X[:, 0, cls.XLabels.PolyAngle]]).T
-        X[:, angled_poly_iters:, cls.XLabels.PolyAngle] = 0
-        X[..., cls.XLabels.PolyDia] = np.vstack(timesteps * [X[:, 0, cls.XLabels.PolyDia]]).T
 
         U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
         U[:, 0] = cls.sample_init_control_vars(n)
-        max_generator_voltage = np.random.uniform(6 * cls._lower, 6 * cls._upper, n)
-        U[:, :growth_iters, cls.ULabels.GeneratorVoltage] = np.outer(U[:, 0, cls.ULabels.GeneratorVoltage], init_weight) + np.outer(max_generator_voltage, end_weight)
-        U[:, growth_iters:, cls.ULabels.GeneratorVoltage] = np.vstack((timesteps - growth_iters) * [max_generator_voltage]).T
-        max_poly_pull_rate = np.random.uniform(2.4 * cls._lower, 2.4 * cls._upper, n)
-        U[:, :growth_iters, cls.ULabels.PolyPullRate] = np.outer(U[:, 0, cls.ULabels.PolyPullRate], init_weight) + np.outer(max_poly_pull_rate, end_weight)
-        U[:, growth_iters:, cls.ULabels.PolyPullRate] = np.vstack((timesteps - growth_iters) * [max_poly_pull_rate]).T
+        timevector = 60 * np.array([0,   40,  80,  120, 160, cls.dt * timesteps])
+        include = np.where(timevector > cls.dt * timesteps)[0][0]
+        timevector = timevector[:include]
+        gv = np.array([3,   4,   4.7, 5,   5,  5])[:include]
+        ppr = np.array([1.5, 1.3, 2.5, 2.7, 2.7, 2.7])[:include]
+        for i in range(n):
+            x = np.linspace(0, timevector[-1], timesteps)
+            U[i, :, cls.ULabels.GeneratorVoltage] = np.interp(x, timevector, gv * np.random.uniform(0.95, 1.05, include))
+            U[i, :, cls.ULabels.PolyPullRate] = np.interp(x, timevector, ppr * np.random.uniform(0.95, 1.05, include))
         U[..., cls.ULabels.CrystalPullRate] = np.vstack(timesteps * [U[:, 0, cls.ULabels.CrystalPullRate]]).T
 
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
@@ -120,13 +111,17 @@ class Steuermann(Environment):
 
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
+        still_growing = np.ones(n, dtype=bool)
+        max_poly_dia = np.random.choice([152.4], n, replace=True)
         for i in tqdm(range(timesteps-1), disable=not with_tqdm):
-            next_poly_angles = X[:, i + 1, cls.XLabels.PolyAngle].copy()
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
                 X[:, i], U[:, i],
                 S[:, i], Z[:, i],
             )
-            X[:, i + 1, cls.XLabels.PolyAngle] = next_poly_angles
+            for j in range(n):
+                if still_growing[j] and X[j, i + 1, cls.XLabels.PolyDia] >= max_poly_dia[j]:
+                    still_growing[j] = False
+                    X[j, i + 1:, cls.XLabels.PolyAngle] = 0
 
         return X, U, S, X[..., cls.reference_variables].copy(), Z
 

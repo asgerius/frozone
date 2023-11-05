@@ -17,8 +17,8 @@ a_Rc = 1
 a_hc = 1.3
 a_Rn = 0
 loss_pF = 1
-Rf_mm = [24.50, 27.00, 29.50, 32.50, 35.50, 42.00, 48.50, 165.00]
-Loss_Poly_kW = [2.44917, 2.40187, 2.58460, 2.85144, 3.06050, 3.59479, 4.03527, 11.96]
+Rf_mm = [10.00, 12.50, 15.00, 17.50, 20.00, 25.00, 30.00, 100.00]
+Loss_Poly_kW = [0.10722, 0.18102, 0.27194, 0.36952, 0.48829, 0.76146, 1.05947, 5.23165]
 loss_pC = 1
 Rc_mm = [10.00, 12.50, 15.00, 17.50, 20.00, 25.00, 30.00, 100.00]
 Loss_Crys_kW = [0.10722, 0.18102, 0.27194, 0.36952, 0.48829, 0.76146, 1.05947, 5.23165]
@@ -27,21 +27,21 @@ T_u = 20
 n_Rf = 20
 n_hf = -1.8
 n_hc = -1.8
-aG_fr = 1.3
+aG_fr = 0 #1.3
 a0_fr = 16
 a1_fr = 0
 a2_fr = 32.48
 a3_fr = 1.2
-aG_bo = 1.3
+aG_bo = 0 #1.3
 a0_bo = 16
 a1_bo = 0
 a2_bo = 32.48
 a3_bo = 1.2
-u_pF = 0.02
+u_pF = 0.04
 u_eF = 2
-r_eF = 1.3
+r_eF = 1.5
 h_eF = 2
-u_pC = 0.09
+u_pC = 0.07
 u_eC = 2
 r_eC = 1.5
 h_eC = 2
@@ -58,17 +58,17 @@ x_dRn = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
 y_dRn = [-12.8708, -6.7691, -3.9147, -2.3774, -1.5903, -1.1596, -0.86998, -0.70873, -0.55236, -0.44517, -0.3425,
          -0.30507, -0.27263, -0.23548]
 a_PowerFlux_Poly = 0
-a_PowerFlux_Crys = 1
+a_PowerFlux_Crys = 0
 str_parameter_51 = [17.5, 91]
-str_parameter_52 = [4.00, 0.0]
+str_parameter_52 = [0.0, 0.0]
 str_parameter_53 = [17.5, 112]
-str_parameter_54 = [6.11, 0.0]
+str_parameter_54 = [0.0, 0.0]
 str_parameter_55 = 0
 str_parameter_56 = [0]
 str_parameter_57 = [0]
 str_parameter_58 = 1
 str_parameter_59 = [0]
-str_parameter_60 = [0.02]
+str_parameter_60 = [0]
 pull_vCr = 0.0
 zeta_si = 0.0
 R_slit_mm = 0.0
@@ -335,9 +335,6 @@ def f(x, u, z):
 
     FeedAngle_rad = z[0]
 
-    # Rf_cm = Rf_mm / 10
-    # Rc_cm = Rc_mm / 10
-    # V_mm3 = V_cm3 * 1000
     Rf2_mm2 = Rf_mm ** 2
     Rc2_mm2 = Rc_mm ** 2
 
@@ -355,11 +352,9 @@ def f(x, u, z):
     V_mm3_dot = (rohS / rohM) * (pi * Rf2_mm2 * vMe_mms - aG_fr * Vfr_mm3_dot) - (rohS / rohM) * (
             pi * Rc2_mm2 * vGr_mms) - ((rohM - rohS) / rohM) * aG_bo * Vbo_mm3_dot
     V_cm3_dot = V_mm3_dot / 1000
-    # Pc_loss_kW = loss_pC * GetPowerLoss_Crys_kW(Rc_mm)
+    #Pc_loss_kW = loss_pC * GetPowerLoss_Crys_kW(Rc_mm)
     Pf_loss_kW_dot = loss_pF * GetPowerLoss_Poly_kW_dot(Rf_mm, Rf_mm_dot)
     Pc_loss_kW_dot = loss_pC * GetPowerLoss_Crys_kW_dot(Rc_mm, Rc_mm_dot)
-    # Pf_kW = GetPowerF_kW(Ud_kV, Rf_mm, Hf_mm)
-    # Pc_kW = GetPowerC_kW(Ud_kV, Rc_mm, Hc_mm)
     Pf_kW_dot = GetPowerF_kW_dot(Ud_kV, Ud_kV_dot, Rf_mm, Rf_mm_dot, Hf_mm, Hf_mm_dot)
     Pc_kW_dot = GetPowerC_kW_dot(Ud_kV, Ud_kV_dot, Rc_mm, Rc_mm_dot, Hc_mm, Hc_mm_dot)
     Pf_flux_kW_dot = GetPowerFlux_Poly_kW_dot(Rf_mm, Rf_mm_dot)
@@ -367,6 +362,7 @@ def f(x, u, z):
 
     pi_q0_rohS = pi * q0 * (rohS / 1000000.0)
 
+    #print("Pf_kW_dot", Pf_kW_dot, " Pf_loss_kW_dot", Pf_loss_kW_dot)
     vMe_mmPs_dot = (Pf_kW_dot - Pf_loss_kW_dot - Pf_flux_kW_dot) / (pi_q0_rohS * Rf2_mm2)
     vCr_mmPs_dot = (Pc_loss_kW_dot - Pc_kW_dot - Pc_flux_kW_dot) / (pi_q0_rohS * Rc2_mm2)
 
@@ -390,19 +386,16 @@ def f(x, u, z):
                              a_hc * dHc_mm * Hc_mm_dot +
                              a_Rn * dRn_mm * Rn_mm_dot) * (pi / 180.0)
 
-    xout = np.array([
-        Rf_mm_dot,
-        Rc_mm_dot,
-        Hf_mm_dot,
-        Hc_mm_dot,
-        V_cm3_dot,
-        vMe_mmPs_dot,
-        vCr_mmPs_dot,
-        MeltAngle_rad_dot,
-        Ud_kV_dot,
-        Rn_mm_dot,
-        vfd_mmPs_dot,
-        vcd_mmPs_dot,
-    ])
+    xout = np.array([Rf_mm_dot,
+                     Rc_mm_dot,
+                     Hf_mm_dot,
+                     Hc_mm_dot,
+                     V_cm3_dot,
+                     vMe_mmPs_dot,
+                     vCr_mmPs_dot,
+                     MeltAngle_rad_dot,
+                     Ud_kV_dot, Rn_mm_dot,
+                     vfd_mmPs_dot,
+                     vcd_mmPs_dot])
 
     return xout

@@ -28,7 +28,7 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
 
         x = x + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
-        sys.set_within_limits(x)
+    sys.isvalidstate(x)
 
     return x
 
