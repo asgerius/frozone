@@ -13,12 +13,9 @@ class Metadata:
     raw_file: str | None = None
     date: datetime = datetime.date(datetime.now())
 
-# X, U, S, R
-DataSequence = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-Dataset = List[Tuple[Metadata, DataSequence]]
 # X, U, S, R, Z
-DataSequenceSim = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-DatasetSim = List[Tuple[Metadata, DataSequenceSim]]
+DataSequence = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+Dataset = List[Tuple[Metadata, DataSequence]]
 
 TRAIN_TEST_SPLIT = 0.9
 RAW_SUBDIR = "Raw"

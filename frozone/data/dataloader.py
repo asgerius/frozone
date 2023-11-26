@@ -12,11 +12,12 @@ from typing import Generator, Optional, Type
 import numpy as np
 import torch
 from pelutils import TickTock, log, LogLevels, thousands_seperators
+from frozone.data.utils import numpy_to_torch_device
 
 import frozone.train
-from frozone import device, tensor_size
-from frozone.data import DataSequence, Dataset, DatasetSim
-from frozone.environments import Environment, FloatZone
+from frozone import tensor_size
+from frozone.data import DataSequence, Dataset
+from frozone.environments import Environment, FloatZone, FloatZoneNNSimTrain
 from frozone.model.floatzone_network import interpolate
 from frozone.train import TrainConfig, TrainResults
 
@@ -30,7 +31,7 @@ def load_data_files(
     year=0,
     shuffle=True,
 ) -> tuple[Dataset, list[str]]:
-    """ Loads data for an environment, which is returned as a list of (X, U, S, R) tuples, each of which
+    """ Loads data for an environment, which is returned as a list of (X, U, S, R, Z) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
 
     max_num_files = max_num_files or None
@@ -42,20 +43,20 @@ def load_data_files(
     used_files = list()
     for npz_file in npz_files:
         arrs = np.load(npz_file, allow_pickle=True)
-        metadata, X, U, S, R = arrs["metadata"].item(), arrs["X"], arrs["U"], arrs["S"], arrs["R"]
-        # print(npz_file, "\n", metadata.raw_file)
-        if train_cfg and train_cfg.phase and train_cfg.get_env() is FloatZone:
+        metadata, X, U, S, R, Z = arrs["metadata"].item(), arrs["X"], arrs["U"], arrs["S"], arrs["R"], arrs["Z"]
+        if train_cfg and train_cfg.phase and (train_cfg.get_env() is FloatZone or train_cfg.get_env() is FloatZoneNNSimTrain):
             is_phase = FloatZone.is_phase(train_cfg.phase, S)
             X = X[is_phase]
             U = U[is_phase]
             S = S[is_phase]
             R = R[is_phase]
+            Z = Z[is_phase]
             metadata.length = len(X)
-        if (train_cfg and metadata.length < train_cfg.H + train_cfg.F + 3) or metadata.date.year < year:
+        if (train_cfg and metadata.length < train_cfg.H + train_cfg.F) or metadata.date.year < year:
             # Ignore files with too little data to be useful
             # Also ignore too old data
             continue
-        sets.append((metadata, (X, U, S, R)))
+        sets.append((metadata, (X, U, S, R, Z)))
         used_files.append(npz_file)
         if len(sets) == max_num_files:
             return sets, used_files
@@ -67,7 +68,7 @@ def dataset_size(dataset: Dataset) -> int:
 
 def standardize(
     env: Type[Environment],
-    dataset: Dataset | DatasetSim,
+    dataset: Dataset,
     train_results: TrainResults,
 ) -> int:
     """ Calculates the feature-wise mean and standard deviations of X and U for the given data set. """
@@ -82,7 +83,7 @@ def standardize(
 
         # Calculate sum
         n = 0
-        for _, (X, U, S, R) in dataset:
+        for _, (X, U, S, R, Z) in dataset:
             sum_x += X.sum(axis=0)
             sum_u += U.sum(axis=0)
             n += len(X)
@@ -91,7 +92,7 @@ def standardize(
         mean_u = sum_u / n
 
         # Calculate variance
-        for _, (X, U, S, R) in dataset:
+        for _, (X, U, S, R, Z) in dataset:
             X[...] = X - mean_x
             U[...] = U - mean_u
 
@@ -108,17 +109,14 @@ def standardize(
 
     else:
 
-        for _, (X, U, S, R, *_) in dataset:
+        for _, (X, U, S, R, Z) in dataset:
             X[...] = X - train_results.mean_x
             U[...] = U - train_results.mean_u
 
-    for _, (X, U, S, R, *_) in dataset:
+    for _, (X, U, S, R, Z) in dataset:
         X[...] = X / (train_results.std_x + EPS)
         U[...] = U / (train_results.std_u + EPS)
         R[...] = (R - train_results.mean_x[env.reference_variables]) / (train_results.std_x[env.reference_variables] + EPS)
-
-def numpy_to_torch_device(*arrays: np.ndarray) -> list[torch.Tensor]:
-    return [torch.from_numpy(x).to(device).float() for x in arrays]
 
 def _start_dataloader_thread(
     env: Type[Environment],
@@ -152,7 +150,7 @@ def _start_dataloader_thread(
 
             for i in range(train_cfg.batch_size):
                 _, (X_seq, U_seq, S_seq, *_) = dataset[set_index[i]]
-                start_iter = random.randint(0, len(X_seq) - train_cfg.H - train_cfg.F - 1)
+                start_iter = random.randint(0, len(X_seq) - train_cfg.H - train_cfg.F)
 
                 with tt.profile("Get slices"):
                     X[i] = X_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]

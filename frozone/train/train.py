@@ -54,7 +54,15 @@ def train(job: JobDescription):
 
     log("Training configuration", train_cfg)
 
-    env: Type[environments.Environment] = getattr(environments, train_cfg.env)
+    env = train_cfg.get_env()
+    if env is environments.FloatZoneNNSim:
+        train_config_nnsim = TrainConfig.load(env.model_path)
+        train_results_nnsim = TrainResults.load(env.model_path)
+        train_results.mean_x = train_results_nnsim.mean_x
+        train_results.mean_u = train_results_nnsim.mean_u
+        train_results.std_x = train_results_nnsim.std_x
+        train_results.std_u = train_results_nnsim.std_u
+
     log("Got environment %s" % env.__name__)
 
     train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, where=PROCESSED_SUBDIR)
@@ -209,6 +217,18 @@ def train(job: JobDescription):
                 plot_lr(job.location, train_cfg, train_results)
             rare_checkpoint_counter = (rare_checkpoint_counter + 1) % rare_checkpoint_every
 
+            for dynamics_model, control_model in models:
+                dynamics_model.train()
+                control_model.train()
+
+            # Save training progress
+            log("Saving models")
+            train_cfg.save(job.location)
+            train_results.save(job.location)
+            for i in range(train_cfg.num_models):
+                models[i][0].save(job.location, i)
+                models[i][1].save(job.location, i)
+
             if batch_no == train_cfg.batches:
                 with TT.profile("Forward evalutation"):
                     forward(
@@ -218,30 +238,22 @@ def train(job: JobDescription):
                         test_dataset,
                         train_cfg,
                         train_results,
-                        ForwardConfig(num_samples=5, num_sequences=3 if env is environments.FloatZone else 1, opt_steps=5, step_size=3e-4),
+                        ForwardConfig(num_samples=5, num_sequences=3, opt_steps=5, step_size=3e-4),
                     )
 
-                with TT.profile("Simulate control"):
-                    simulated_control(
-                        job.location,
-                        env,
-                        models,
-                        test_dataset,
-                        train_cfg,
-                        train_results,
-                        SimulationConfig(5, train_cfg.prediction_window, train_cfg.prediction_window, env.dt, 0, 2e-2),
-                    )
-
-            for dynamics_model, control_model in models:
-                dynamics_model.train()
-                control_model.train()
-
-            # Save training progress
-            train_cfg.save(job.location)
-            train_results.save(job.location)
-            for i in range(train_cfg.num_models):
-                models[i][0].save(job.location, i)
-                models[i][1].save(job.location, i)
+                if env.is_simulation:
+                    if env is environments.FloatZoneNNSim:
+                        env.load(train_config_nnsim, train_results_nnsim)
+                    with TT.profile("Simulate control"):
+                        simulated_control(
+                            job.location,
+                            env,
+                            models,
+                            test_dataset,
+                            train_cfg,
+                            train_results,
+                            SimulationConfig(5, train_cfg.prediction_window, 5, 2e-2),
+                        )
 
         if is_rare_checkpoint:
             log("Training time distribution", TT)

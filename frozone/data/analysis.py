@@ -27,7 +27,7 @@ def analyse_full_floatzone_data(job: JobDescription, dataset: Dataset):
     with plots.Figure(os.path.join(job.location, _plot_folder, f"phase-dist.png"), figsize=(25, 18)):
         for phase, phase_index in PHASE_TO_INDEX.items():
             counts = list()
-            for metadata, (X, U, S, R) in dataset:
+            for metadata, (X, U, S, R, Z) in dataset:
                 is_phase = env.is_phase(phase, S)
                 if c := is_phase.sum():
                     counts.append(c)
@@ -45,10 +45,10 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
 
     columns = 4
     is_floatzone = env is environments.FloatZone
-    rows = math.ceil((len(env.XLabels) + len(env.ULabels) + is_floatzone) / columns)
+    rows = math.ceil((len(env.XLabels) + len(env.ULabels) + len(env.ZLabels) + is_floatzone) / columns)
 
     log("Plotting %i samples" % len(dataset))
-    for i, (metadata, (X, U, S, R)) in enumerate(dataset):
+    for i, (metadata, (X, U, S, R, Z)) in enumerate(dataset):
         with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
             subplot_no = 0
 
@@ -111,6 +111,14 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
+                for zlabel in env.ZLabels:
+                    subplot_no += 1
+                    plt.subplot(rows, columns, subplot_no)
+                    plt.plot(env.dt * np.arange(len(Z)), Z[:, zlabel], lw=1.5)
+                    plt.xlabel("Time [s]")
+                    plt.title(env.format_label(zlabel))
+                    plt.grid()
+
             if is_floatzone:
                 subplot_no += 1
                 plt.subplot(rows, columns, subplot_no)
@@ -142,7 +150,7 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
         plot_folder = os.path.join(job.location, _plot_folder + " " + phase_name)
         shutil.rmtree(plot_folder, ignore_errors=True)
 
-        for i, (metadata, (X_full, U_full, S_full, R_full)) in enumerate(dataset):
+        for i, (metadata, (X_full, U_full, S_full, R_full, *_)) in enumerate(dataset):
             is_phase = env.is_phase(phase, S_full)
             if not is_phase.sum():
                 continue

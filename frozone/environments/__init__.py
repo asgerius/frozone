@@ -18,6 +18,7 @@ class Environment(abc.ABC):
     S_dtype = np.uint8
 
     dt: float
+    is_simulation: bool
 
     class XLabels(enum.IntEnum):
         """ Mutable states observable to the controller. """
@@ -99,7 +100,7 @@ class Environment(abc.ABC):
         return static_states
 
     @classmethod
-    def simulate(cls, n: int, timesteps: int, with_tqdm=True) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, timesteps: int, with_tqdm=True, tqdm_position=0) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
@@ -112,7 +113,7 @@ class Environment(abc.ABC):
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
         Z[:, 0] = cls.init_hidden_vars(U[:, 0])
 
-        for i in tqdm(range(timesteps-1), file=sys.stdout, disable=not with_tqdm):
+        for i in tqdm(range(timesteps-1), file=sys.stdout, disable=not with_tqdm, position=tqdm_position):
             if i == 0:
                 U[:, i] = cls.sample_new_control_vars(
                     X[:, i],
@@ -155,6 +156,12 @@ class Environment(abc.ABC):
 
         return X, S, Z
 
+    @classmethod
+    def load(cls, train_cfg: frozone.train.TrainConfig):
+        pass
+
 from .ball import Ball
 from .floatzone import FloatZone
+from .floatzone_nnsim import FloatZoneNNSim
+from .floatzone_nnsim_train import FloatZoneNNSimTrain
 from .steuermann import Steuermann

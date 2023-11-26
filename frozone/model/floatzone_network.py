@@ -9,12 +9,13 @@ import torch
 import frozone.model.encoders_h as encoders_h
 import frozone.model.encoders_f as encoders_f
 import frozone.model.decoders as decoders
+import frozone.train
 from frozone import device
 from frozone.model import FzConfig, _FloatzoneModule
-from frozone.train import TrainConfig, history_only_control, history_only_process
+# from frozone.train import TrainConfig, history_only_control, history_only_process
 
 
-def interpolate(n: int, fp: np.ndarray | torch.Tensor, train_cfg: Optional[TrainConfig]=None, *, h=False) -> torch.Tensor:
+def interpolate(n: int, fp: np.ndarray | torch.Tensor, train_cfg: Optional[frozone.train.TrainConfig]=None, *, h=False) -> torch.Tensor:
 
     if h:
         scale = (train_cfg.Hi - (train_cfg.Fi - 1) / (train_cfg.Fi - 1)) / (train_cfg.Hi - 1)
@@ -43,7 +44,7 @@ def interpolate(n: int, fp: np.ndarray | torch.Tensor, train_cfg: Optional[Train
 
 class FzNetwork(_FloatzoneModule):
 
-    def __init__(self, config: FzConfig, train_cfg: TrainConfig, *, for_control: bool):
+    def __init__(self, config: FzConfig, train_cfg: frozone.train.TrainConfig, *, for_control: bool):
         super().__init__(config)
 
         self.for_control = for_control
@@ -69,12 +70,12 @@ class FzNetwork(_FloatzoneModule):
         self.loss_weight = torch.ones(train_cfg.Fi)
         self.loss_weight = self.loss_weight / self.loss_weight.sum()
 
-        self.target_weights_process = history_only_process(train_cfg.get_env())
+        self.target_weights_process = frozone.train.history_only_process(train_cfg.get_env())
         self.target_weights_process = torch.from_numpy(self.target_weights_process) * \
             len(self.target_weights_process) / \
             self.target_weights_process.sum()
 
-        self.target_weights_control = history_only_control(train_cfg.get_env())
+        self.target_weights_control = frozone.train.history_only_control(train_cfg.get_env())
         self.target_weights_control = torch.from_numpy(self.target_weights_control) * \
             len(self.target_weights_control) / \
             self.target_weights_control.sum()
@@ -116,9 +117,10 @@ class FzNetwork(_FloatzoneModule):
         h_smooth = Xh_smooth if self.for_dynamics else Uh_smooth
 
         f = Uf if self.for_dynamics else Xf
+        f_smooth = self.smoothen_f(f)
 
-        zh = self.Eh(Xh, Uh, Sh)
-        Zf = self.Ef(Sf, Xf_or_Uf=f)
+        zh = self.Eh(Xh_smooth, Uh_smooth, Sh)
+        Zf = self.Ef(Sf, Xf_or_Uf=f_smooth)
 
         pred = self.D(zh, Zf)
         pred = pred + h_smooth[:, -1].unsqueeze(dim=1)
@@ -175,7 +177,7 @@ class FzNetwork(_FloatzoneModule):
     @classmethod
     def load(cls, path: str, num: int) -> tuple[_FloatzoneModule, _FloatzoneModule]:
         config = FzConfig.load(path)
-        train_cfg = TrainConfig.load(path)
+        train_cfg = frozone.train.TrainConfig.load(path)
 
         dynamics_model = cls(config, train_cfg, for_control=False).to(device)
         control_model = cls(config, train_cfg, for_control=True).to(device)

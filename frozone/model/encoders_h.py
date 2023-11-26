@@ -54,7 +54,7 @@ class GatedTransformer(EncoderH):
         self.out_map = nn.Linear(config.dz * (config.Hi + channel_d), config.dz)
 
     def forward(self, Xh: torch.FloatTensor, Uh: torch.FloatTensor, Sh: torch.FloatTensor) -> torch.FloatTensor:
-        # Time step-wise tower
+        # Time-wise tower
         x_s = torch.concat((Xh, Uh, Sh), dim=2)
         x_s_t = self.time_transformer(x_s)
 

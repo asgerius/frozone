@@ -10,6 +10,7 @@ from frozone.environments import Environment
 class Ball(Environment):
 
     dt = 1 / 10
+    is_simulation = True
 
     class XLabels(enum.IntEnum):
         X = 0

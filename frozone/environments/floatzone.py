@@ -9,6 +9,7 @@ from frozone.environments import Environment
 class FloatZone(Environment):
 
     dt = 6
+    is_simulation = False
 
     class XLabels(enum.IntEnum):
         PolyDia         = 0
@@ -17,10 +18,9 @@ class FloatZone(Environment):
         LowerZone       = 3
         FullZone        = 4
         MeltVolume      = 5
-        MeltNeckDia     = 6
-        PolyAngle       = 7
-        CrystalAngle    = 8
-        FullPolyDia     = 9
+        PolyAngle       = 6
+        CrystalAngle    = 7
+        FullPolyDia     = 8
 
     class ULabels(enum.IntEnum):
         GeneratorVoltage = 0
@@ -30,12 +30,11 @@ class FloatZone(Environment):
     class SLabels(enum.IntEnum):
         GrowthState   = 0
         Machine       = 1
-        SimulatedData = 2
 
-    S_bin_count = (len(PHASE_TO_INDEX), 12, 1)
+    S_bin_count = (len(PHASE_TO_INDEX), 12)
 
     no_reference_variables = [XLabels.PolyDia, XLabels.UpperZone, XLabels.LowerZone,
-                              XLabels.MeltVolume, XLabels.MeltNeckDia, XLabels.PolyAngle,
+                              XLabels.MeltVolume, XLabels.PolyAngle,
                               XLabels.CrystalAngle, XLabels.FullPolyDia]
 
     predefined_control = [ULabels.CrystalPullRate]
@@ -47,7 +46,6 @@ class FloatZone(Environment):
         ("X", XLabels.LowerZone): "mm",
         ("X", XLabels.FullZone): "mm",
         ("X", XLabels.MeltVolume): "cm$^3$",
-        ("X", XLabels.MeltNeckDia): "mm",
         ("X", XLabels.PolyAngle): "deg",
         ("X", XLabels.CrystalAngle): "deg",
         ("X", XLabels.FullPolyDia): "mm",

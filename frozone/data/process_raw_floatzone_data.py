@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import multiprocessing as mp
 import os
 import random
@@ -18,8 +16,8 @@ from tqdm import tqdm
 from frozone.data import PHASE_TO_INDEX, DataSequence, PROCESSED_SUBDIR, RAW_SUBDIR, TEST_SUBDIR, TRAIN_SUBDIR, TRAIN_TEST_SPLIT, Metadata
 from frozone.environments import FloatZone
 
+
 # These files all have something weird going on in them, so they are skipped
-# See the logfile produced by data/analysis.log for details
 BLACKLIST = {
     "M34/34_Automation_Archive_2018/34-1170_Automation.txt",
     "M34/34_Automation_Archive_2019/34-1720_Automation.txt",
@@ -181,7 +179,7 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int,
     X = np.empty((timesteps, len(FloatZone.XLabels)), dtype=FloatZone.X_dtype)
     U = np.empty((timesteps, len(FloatZone.ULabels)), dtype=FloatZone.U_dtype)
     S = np.zeros((timesteps, sum(FloatZone.S_bin_count)), dtype=FloatZone.S_dtype)
-    R = np.empty((timesteps, len(FloatZone.reference_variables)), dtype=FloatZone.X_dtype)
+    R = np.zeros((timesteps, len(FloatZone.reference_variables)), dtype=FloatZone.X_dtype)
 
     for phase, slice_ in zip(sorted_phases, sorted_slices):
         slice_data = slice(slice_.start - offset, slice_.stop - offset)
@@ -192,11 +190,9 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int,
         X[slice_data, FloatZone.XLabels.LowerZone]       = df["LowerZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.FullZone]        = df["FullZone[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.MeltVolume]      = df["MeltVolume[mm3]"].values[slice_] / 1000
-        X[slice_data, FloatZone.XLabels.MeltNeckDia]     = df["MeltNeck[mm]"].values[slice_]
         X[slice_data, FloatZone.XLabels.PolyAngle]       = df["PolyAngle[deg]"].values[slice_]
         X[slice_data, FloatZone.XLabels.CrystalAngle]    = df["CrysAngle[deg]"].values[slice_]
         X[slice_data, FloatZone.XLabels.FullPolyDia]     = df["PolyDia[mm]"].values[slice_].max() if phase >= 512 else 0
-        X[slice_data, FloatZone.XLabels.GeneratorHeight] = (X[slice_data, FloatZone.XLabels.FullZone] - (X[slice_data, FloatZone.XLabels.UpperZone] + X[slice_data, FloatZone.XLabels.LowerZone])).mean()
         # X[:, FloatZone.XLabels.GrowthLine] = df_used["GrowthLine[mm]"].values
         # X[:, FloatZone.XLabels.PosPoly]    = df_used["Pos_Poly[mm]"].values
         # X[:, FloatZone.XLabels.PosCrys]    = df_used["Pos_Crys[mm]"].values
@@ -210,7 +206,6 @@ def parse_floatzone_df(fpath: str, df: pd.DataFrame, machine: str) -> tuple[int,
 
         S[slice_data, PHASE_TO_INDEX[phase]] = 1
         S[slice_data, len(PHASE_TO_INDEX) + MACHINES.index(machine)] = 1
-        S[slice_data, -1] = 0
 
         R[slice_data, FloatZone.reference_variables.index(FloatZone.XLabels.CrystalDia)] = df["Ref_CrysDia[mm]"].values[slice_]
         R[slice_data, FloatZone.reference_variables.index(FloatZone.XLabels.FullZone)] = df["Ref_FullZone[mm]"].values[slice_]
@@ -255,7 +250,7 @@ def process_floatzone_file(args: list[str]) -> int:
                 raw_file=full_path,
                 date=date,
             )
-            np.savez(outpath, metadata=metadata, X=X, U=U, S=S, R=R)
+            np.savez(outpath, metadata=metadata, X=X, U=U, S=S, R=R, Z=np.empty_like(X)[..., []])
 
         return code
 

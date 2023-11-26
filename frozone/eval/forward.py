@@ -46,7 +46,7 @@ def forward(
     S_true = np.empty((forward_cfg.num_samples, timesteps, sum(env.S_bin_count)), dtype=env.S_dtype)
     R_true = np.empty((forward_cfg.num_samples, timesteps, len(env.reference_variables)), dtype=env.X_dtype)
     metadatas = list()
-    for i, (metadata, (X, U, S, R)) in enumerate(dataset[:forward_cfg.num_samples]):
+    for i, (metadata, (X, U, S, R, Z)) in enumerate(dataset[:forward_cfg.num_samples]):
         metadatas.append(metadata)
         start_index = 0  # np.random.randint(0, len(X) - timesteps)
         X_true[i] = X[start_index : start_index + timesteps]
