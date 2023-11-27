@@ -107,6 +107,6 @@ def plot_simulated_control(
             plt.grid()
 
         plt.suptitle(
-            f"Controller - sample {sample_no}, {env.__name__}",
+            f"{env.__name__} controller - sample {sample_no}",
             fontsize="xx-large",
         )
