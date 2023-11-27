@@ -85,13 +85,13 @@ def plot_simulated_control(
                         color="grey",
                         label="Individual predictions" if k == 0 else None,
                     )
-                # plt.plot(
-                #     timesteps_pred,
-                #     pred[timesteps_pred_index, label],
-                #     lw=1.2,
-                #     color=plots.tab_colours[1],
-                #     label="Ensemble",
-                # )
+                plt.plot(
+                    timesteps_pred,
+                    pred[timesteps_pred_index, label],
+                    lw=1.2,
+                    color=plots.tab_colours[1],
+                    label="Ensemble",
+                )
                 # plt.plot(
                 #     timesteps_pred,
                 #     pred_opt[timesteps_pred_index, label],

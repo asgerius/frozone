@@ -91,34 +91,40 @@ class ControllerStrategies:
     def step_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        U[:, seq_mid:seq_control] = 0
+        U[[0], seq_mid:seq_control] = 0
         Xh, Uh, Sh = numpy_to_torch_device(
-            X[:, seq_start:seq_mid],
-            U[:, seq_start:seq_mid],
-            S[:, seq_start:seq_mid],
+            X[[0], seq_start:seq_mid],
+            U[[0], seq_start:seq_mid],
+            S[[0], seq_start:seq_mid],
         )
 
         for dynamics_model, control_model in self.models:
-            U[:, seq_mid:seq_control] += control_model(
-                Xh, Uh, Sh,
-                self.S_true_d[:, seq_mid:seq_end],
-                Xf = self.get_target_Xf(
-                    Xh[..., self.env.reference_variables],
-                    self.X_true_d[:, seq_mid:seq_end, self.env.reference_variables],
-                ),
-            )[:, :self.control_interval].cpu().numpy() / self.train_cfg.num_models
+            U[[0], seq_mid:seq_control] += interpolate(self.train_cfg.F, control_model(
+                interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
+                interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
+                interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
+                Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
+                Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
+            )).cpu().numpy()[:, :self.control_interval] / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
         if self.env is environments.FloatZoneNNSim:
-            pass
+            X[[0], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
+                X[[0], seq_start:seq_mid],
+                U[[0], seq_start:seq_mid],
+                S[[0], seq_start:seq_mid],
+                S[[0], seq_mid:seq_end],
+                U[[0], seq_mid:seq_end],
+                self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
+            )
         else:
             for i in range(self.control_interval):
-                X[:, seq_mid + i], S[:, seq_mid + i], Z[:, seq_mid + i] = self.env.forward_standardized(
-                    X[:, seq_mid+i-1],
-                    U[:, seq_mid+i-1],
-                    S[:, seq_mid+i-1],
-                    Z[:, seq_mid+i-1],
+                X[[0], seq_mid + i], S[[0], seq_mid + i], Z[[0], seq_mid + i] = self.env.forward_standardized(
+                    X[[0], seq_mid+i-1],
+                    U[[0], seq_mid+i-1],
+                    S[[0], seq_mid+i-1],
+                    Z[[0], seq_mid+i-1],
                     self.train_results,
                 )
 
@@ -208,10 +214,10 @@ def simulated_control(
         S_pred_by_model = np.stack([S_true] * train_cfg.num_models, axis=0)
         Z_pred_by_model = np.stack([Z_true] * train_cfg.num_models, axis=0)
 
-        X_pred = X_true.copy()
-        U_pred = U_true.copy()
-        S_pred = S_true.copy()
-        Z_pred = Z_true.copy()
+        X_pred = np.expand_dims(X_true.copy(), axis=0)
+        U_pred = np.expand_dims(U_true.copy(), axis=0)
+        S_pred = np.expand_dims(S_true.copy(), axis=0)
+        Z_pred = np.expand_dims(Z_true.copy(), axis=0)
         X_pred_opt = X_true.copy()
         U_pred_opt = U_true.copy()
         S_pred_opt = S_true.copy()
@@ -224,8 +230,8 @@ def simulated_control(
         for j in tqdm(r, disable=not with_tqdm):
             with TT.profile("By model", hits=train_cfg.num_models):
                 controller_strategies.step_single_model(j * control_interval, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
-            # with TT.profile("Ensemble", hits = simulation_cfg.num_samples):
-            #     controller_strategies.step_ensemble(j * control_interval, X_pred, U_pred, S_pred, Z_pred)
+            with TT.profile("Ensemble", hits = simulation_cfg.num_samples):
+                controller_strategies.step_ensemble(j * control_interval, X_pred, U_pred, S_pred, Z_pred)
             # with TT.profile("Ensemble optimized", hits = simulation_cfg.num_samples):
                 # controller_strategies.step_optimized_ensemble(j * control_interval, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
 
@@ -241,6 +247,12 @@ def simulated_control(
             U_pred = U_pred * train_results.std_u + train_results.mean_u
             X_pred_opt = X_pred_opt * train_results.std_x + train_results.mean_x
             U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
+
+        # Undo extra dimension
+        X_pred = X_pred[0]
+        U_pred = U_pred[0]
+        S_pred = S_pred[0]
+        Z_pred = Z_pred[0]
 
         control_end = r.stop * control_interval + train_cfg.H
         with TT.profile("Plot"):
