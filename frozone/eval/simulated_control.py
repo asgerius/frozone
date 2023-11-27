@@ -170,7 +170,7 @@ class ControllerStrategies:
                 optimizer.step()
                 optimizer.zero_grad()
 
-            U[[0], seq_mid:seq_end] += interpolate(self.train_cfg.F, Uf) \
+            U[[0], seq_mid:seq_control] += interpolate(self.train_cfg.F, Uf) \
                 .detach() \
                 .cpu() \
                 .numpy()[:, :self.control_interval] / self.train_cfg.num_models
@@ -315,7 +315,7 @@ if __name__ == "__main__":
         if env is environments.FloatZoneNNSim:
             env.load(TrainConfig.load(env.model_path), TrainResults.load(env.model_path))
 
-        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, 10, 1e-3)
+        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window / 3, 10, 1e-3)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
