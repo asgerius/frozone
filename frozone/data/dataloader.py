@@ -7,6 +7,7 @@ import threading
 import time
 from copy import copy
 from queue import Queue
+from tqdm import tqdm
 from typing import Generator, Optional, Type
 
 import numpy as np
@@ -30,6 +31,7 @@ def load_data_files(
     max_num_files=0,
     year=0,
     shuffle=True,
+    with_tqdm=False,
 ) -> tuple[Dataset, list[str]]:
     """ Loads data for an environment, which is returned as a list of (X, U, S, R, Z) tuples, each of which
     is a numpy array of shape time steps x dimensionality. If max_num_files == 0, all files are used. """
@@ -41,7 +43,8 @@ def load_data_files(
 
     sets = list()
     used_files = list()
-    for npz_file in npz_files:
+
+    for npz_file in tqdm(npz_files, disable=not with_tqdm):
         arrs = np.load(npz_file, allow_pickle=True)
         metadata, X, U, S, R, Z = arrs["metadata"].item(), arrs["X"], arrs["U"], arrs["S"], arrs["R"], arrs["Z"]
         if train_cfg and train_cfg.phase and (train_cfg.get_env() is FloatZone or train_cfg.get_env() is FloatZoneNNSimTrain):

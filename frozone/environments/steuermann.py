@@ -40,19 +40,19 @@ class Steuermann(Environment):
                               XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle, XLabels.FullPolyDia]
 
     units = {
-        ("X", XLabels.PolyDia): "mm",
-        ("X", XLabels.CrystalDia): "mm",
-        ("X", XLabels.UpperZone): "mm",
-        ("X", XLabels.LowerZone): "mm",
-        ("X", XLabels.FullZone): "mm",
-        ("X", XLabels.MeltVolume): "cm$^3$",
-        ("X", XLabels.CrystalAngle): "deg",
-        ("X", XLabels.MeltNeckDia): "mm",
-        ("X", XLabels.PolyAngle): "deg",
-        ("X", XLabels.FullPolyDia): "mm",
+        ("X", XLabels.PolyDia):          "mm",
+        ("X", XLabels.CrystalDia):       "mm",
+        ("X", XLabels.UpperZone):        "mm",
+        ("X", XLabels.LowerZone):        "mm",
+        ("X", XLabels.FullZone):         "mm",
+        ("X", XLabels.MeltVolume):       "cm$^3$",
+        ("X", XLabels.CrystalAngle):     "deg",
+        ("X", XLabels.MeltNeckDia):      "mm",
+        ("X", XLabels.PolyAngle):        "deg",
+        ("X", XLabels.FullPolyDia):      "mm",
         ("U", ULabels.GeneratorVoltage): "kV",
-        ("U", ULabels.PolyPullRate): "mm/min",
-        ("U", ULabels.CrystalPullRate): "mm/min",
+        ("U", ULabels.PolyPullRate):     "mm/min",
+        ("U", ULabels.CrystalPullRate):  "mm/min",
     }
 
     _lower = 0.9
@@ -129,7 +129,9 @@ class Steuermann(Environment):
                 if i >= constant_time_from[j]:
                     U[:, i + 1] = U[:, i]
 
-        return X, U, S, X[..., cls.reference_variables].copy(), Z
+        R = cls.get_reference_values(X)
+
+        return X, U, S, R, Z
 
     @classmethod
     def forward(cls, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -182,3 +184,20 @@ class Steuermann(Environment):
             Znew[i, cls.ZLabels.TdGeneratorVoltage] = x_pred[8]
 
         return Xnew, S.copy(), Znew
+
+    @classmethod
+    def get_reference_values(cls, X: np.ndarray) -> np.ndarray:
+        num_sections = 5
+        R = np.empty((len(X), len(cls.reference_variables)), dtype=cls.X_dtype)
+
+        index = np.linspace(0, len(X), num_sections + 1, dtype=int)
+        for i, ref_var in enumerate(cls.reference_variables):
+            for i_start, i_stop in zip(index[:-1], index[1:], strict=True):
+                values = X[i_start:i_stop, ref_var]
+                a = (values[-1] - values[0]) / (i_stop - i_start)
+                b = values[0] - a * i_start
+                R[i_start:i_stop, i] = a * np.arange(i_start, i_stop) + b
+
+            R[-len(X)//3:] = R[-len(X)//3]
+
+        return R

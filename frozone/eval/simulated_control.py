@@ -242,7 +242,6 @@ def simulated_control(
             X_pred_opt = X_pred_opt * train_results.std_x + train_results.mean_x
             U_pred_opt = U_pred_opt * train_results.std_u + train_results.mean_u
 
-        log("Plotting sample")
         control_end = r.stop * control_interval + train_cfg.H
         with TT.profile("Plot"):
             plot_simulated_control(

@@ -65,8 +65,8 @@ def train(job: JobDescription):
 
     log("Got environment %s" % env.__name__)
 
-    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR, where=PROCESSED_SUBDIR)
-    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR, where=PROCESSED_SUBDIR)
+    train_npz_files = list_processed_data_files(train_cfg.data_path, TRAIN_SUBDIR)
+    test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
     log(
         "Found data files",
         "Train: %s (%.2f %%)" % (thousands_seperators(len(train_npz_files)), 100 * len(train_npz_files) / (len(train_npz_files) + len(test_npz_files))),

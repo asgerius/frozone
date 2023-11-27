@@ -42,6 +42,6 @@ PHASES = {
 # Use indices
 PHASE_TO_INDEX = { 8: 0, 16: 1, 32: 2, 64: 3, 256: 4, 512: 5 }
 
-def list_processed_data_files(data_path: str, train_test_subdir: str, where=PROCESSED_SUBDIR) -> list[str]:
-    path = os.path.join(data_path, where, train_test_subdir, "**", "*.npz")
+def list_processed_data_files(data_path: str, train_test_subdir: str) -> list[str]:
+    path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, "**", "*.npz")
     return glob(path, recursive=True)
