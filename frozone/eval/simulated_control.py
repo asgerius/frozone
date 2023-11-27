@@ -132,45 +132,60 @@ class ControllerStrategies:
     def step_optimized_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        U[:, seq_mid:seq_end] = 0
+        U[[0], seq_mid:seq_end] = 0
 
-        for i in range(self.simulation_cfg.num_samples):
+        Xh, Uh, Sh = numpy_to_torch_device(
+            X[[0], seq_start:seq_mid],
+            U[[0], seq_start:seq_mid],
+            S[[0], seq_start:seq_mid],
+        )
+        Xh_interp = interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True)
+        Uh_interp = interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True)
+        Sh_interp = interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True)
+        Sf_interp = interpolate(self.train_cfg.Fi, self.S_true_d[[0], seq_mid:seq_end])
+        Rf_interp = interpolate(self.train_cfg.Fi, self.R_true_d[[0], seq_mid:seq_end])
+        Xf_interp = interpolate(self.train_cfg.Fi, self.X_true_d[[0], seq_mid:seq_end])
+        Xf_interp[..., self.env.reference_variables] = Rf_interp
 
-            Xh, Uh, Sh = numpy_to_torch_device(
-                X[[i], seq_start:seq_mid],
-                U[[i], seq_start:seq_mid],
-                S[[i], seq_start:seq_mid],
-            )
-            for dynamics_model, control_model in self.models:
-                with torch.no_grad():
-                    target_Xf = self.get_target_Xf(Xh, self.X_true_d[[i], seq_mid:seq_end])
-                    Uf = control_model(
-                        Xh, Uh, Sh,
-                        Sf = self.S_true_d[[i], seq_mid:seq_end],
-                        Xf = target_Xf[..., self.env.reference_variables],
-                    )
-                Uf.requires_grad_()
-                optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
+        for dynamics_model, control_model in self.models:
+            with torch.no_grad():
+                Uf = control_model(
+                    Xh_interp, Uh_interp, Sh_interp,
+                    Sf = Sf_interp,
+                    Xf = Rf_interp
+                )
+            Uf.requires_grad_()
+            optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
 
-                for _ in range(self.simulation_cfg.opt_steps):
-                    Xf = dynamics_model(
-                        Xh, Uh, Sh,
-                        Sf = self.S_true_d[[i], seq_mid:seq_end],
-                        Uf = Uf,
-                    )
+            for _ in range(self.simulation_cfg.opt_steps):
+                Xf = dynamics_model(
+                    Xh_interp, Uh_interp, Sh_interp,
+                    Sf = Sf_interp,
+                    Uf = Uf,
+                )
 
-                    loss = dynamics_model.loss(target_Xf, Xf)
-                    loss.backward()
+                loss = dynamics_model.loss(Xf_interp, Xf)
+                loss.backward()
 
-                    optimizer.step()
-                    optimizer.zero_grad()
+                optimizer.step()
+                optimizer.zero_grad()
 
-                U[[i], seq_mid:seq_end] += Uf.detach().cpu().numpy() / self.train_cfg.num_models
+            U[[0], seq_mid:seq_end] += interpolate(self.train_cfg.F, Uf) \
+                .detach() \
+                .cpu() \
+                .numpy()[:, :self.control_interval] / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
         if self.env is environments.FloatZoneNNSim:
-            pass
+            X[[0], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
+                X[[0], seq_start:seq_mid],
+                U[[0], seq_start:seq_mid],
+                S[[0], seq_start:seq_mid],
+                S[[0], seq_mid:seq_end],
+                U[[0], seq_mid:seq_end],
+                self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
+            )
         else:
             for i in range(self.control_interval):
                 X[:, seq_mid + i], S[:, seq_mid + i], Z[:, seq_mid + i] = self.env.forward_standardized(
@@ -218,10 +233,10 @@ def simulated_control(
         U_pred = np.expand_dims(U_true.copy(), axis=0)
         S_pred = np.expand_dims(S_true.copy(), axis=0)
         Z_pred = np.expand_dims(Z_true.copy(), axis=0)
-        X_pred_opt = X_true.copy()
-        U_pred_opt = U_true.copy()
-        S_pred_opt = S_true.copy()
-        Z_pred_opt = Z_true.copy()
+        X_pred_opt = np.expand_dims(X_true.copy(), axis=0)
+        U_pred_opt = np.expand_dims(U_true.copy(), axis=0)
+        S_pred_opt = np.expand_dims(S_true.copy(), axis=0)
+        Z_pred_opt = np.expand_dims(Z_true.copy(), axis=0)
 
         controller_strategies = ControllerStrategies(models, X_true, S_true, R_true, train_cfg, train_results, simulation_cfg)
         r = range((timesteps - train_cfg.H) // control_interval)
@@ -232,8 +247,8 @@ def simulated_control(
                 controller_strategies.step_single_model(j * control_interval, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
             with TT.profile("Ensemble", hits = simulation_cfg.num_samples):
                 controller_strategies.step_ensemble(j * control_interval, X_pred, U_pred, S_pred, Z_pred)
-            # with TT.profile("Ensemble optimized", hits = simulation_cfg.num_samples):
-                # controller_strategies.step_optimized_ensemble(j * control_interval, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
+            with TT.profile("Ensemble optimized", hits = simulation_cfg.num_samples):
+                controller_strategies.step_optimized_ensemble(j * control_interval, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
 
         TT.end_profile()
 
@@ -253,26 +268,31 @@ def simulated_control(
         U_pred = U_pred[0]
         S_pred = S_pred[0]
         Z_pred = Z_pred[0]
+        X_pred_opt = X_pred_opt[0]
+        U_pred_opt = U_pred_opt[0]
+        S_pred_opt = S_pred_opt[0]
+        Z_pred_opt = Z_pred_opt[0]
 
         control_end = r.stop * control_interval + train_cfg.H
-        with TT.profile("Plot"):
-            plot_simulated_control(
-                path = path,
-                env = env,
-                train_cfg = train_cfg,
-                train_results = train_results,
-                simulation_cfg = simulation_cfg,
-                X_true = X_true,
-                U_true = U_true,
-                R_true = R_true,
-                X_pred = X_pred[:control_end],
-                U_pred = U_pred[:control_end],
-                X_pred_opt = X_pred_opt[:control_end],
-                U_pred_opt = U_pred_opt[:control_end],
-                X_pred_by_model = X_pred_by_model[:, :control_end],
-                U_pred_by_model = U_pred_by_model[:, :control_end],
-                sample_no = i,
-            )
+        if i < 5:
+            with TT.profile("Plot"):
+                plot_simulated_control(
+                    path = path,
+                    env = env,
+                    train_cfg = train_cfg,
+                    train_results = train_results,
+                    simulation_cfg = simulation_cfg,
+                    X_true = X_true,
+                    U_true = U_true,
+                    R_true = R_true,
+                    X_pred = X_pred[:control_end],
+                    U_pred = U_pred[:control_end],
+                    X_pred_opt = X_pred_opt[:control_end],
+                    U_pred_opt = U_pred_opt[:control_end],
+                    X_pred_by_model = X_pred_by_model[:, :control_end],
+                    U_pred_by_model = U_pred_by_model[:, :control_end],
+                    sample_no = i,
+                )
 
     for dm, cm in models:
         dm.train().requires_grad_(True)
@@ -295,7 +315,7 @@ if __name__ == "__main__":
         if env is environments.FloatZoneNNSim:
             env.load(TrainConfig.load(env.model_path), TrainResults.load(env.model_path))
 
-        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, 5, 2e-2)
+        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window, 10, 1e-3)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):

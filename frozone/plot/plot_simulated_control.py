@@ -92,16 +92,21 @@ def plot_simulated_control(
                     color=plots.tab_colours[1],
                     label="Ensemble",
                 )
-                # plt.plot(
-                #     timesteps_pred,
-                #     pred_opt[timesteps_pred_index, label],
-                #     lw=1.2,
-                #     color=plots.tab_colours[2],
-                #     label="Ensemble (opt)",
-                # )
+                plt.plot(
+                    timesteps_pred,
+                    pred_opt[timesteps_pred_index, label],
+                    lw=1.2,
+                    color=plots.tab_colours[2],
+                    label="Ensemble (opt)",
+                )
 
             plt.xlabel("Time [s]")
             plt.ylabel(env.format_label(label))
             plt.legend()
 
             plt.grid()
+
+        plt.suptitle(
+            f"Controller - sample {sample_no}, {env.__name__}",
+            fontsize="xx-large",
+        )

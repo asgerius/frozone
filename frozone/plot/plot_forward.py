@@ -134,6 +134,6 @@ def plot_forward(
                 plt.grid()
 
             plt.suptitle(
-                f"{os.path.basename(metadatas[i].raw_file) if metadatas[i].raw_file is not None else 'Simulation'} ({metadatas[i].date.year})",
+                f"Forward - {os.path.basename(metadatas[i].raw_file) if metadatas[i].raw_file is not None else 'Simulation'} ({metadatas[i].date.year})",
                 fontsize="xx-large",
             )
