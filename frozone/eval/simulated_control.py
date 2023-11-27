@@ -315,7 +315,7 @@ if __name__ == "__main__":
         if env is environments.FloatZoneNNSim:
             env.load(TrainConfig.load(env.model_path), TrainResults.load(env.model_path))
 
-        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window / 3, 10, 1e-3)
+        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window / 10, 10, 1e-3)
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):

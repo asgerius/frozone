@@ -160,10 +160,6 @@ def _start_dataloader_thread(
                     U[i] = U_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
                     S[i] = S_seq[start_iter : start_iter + train_cfg.H + train_cfg.F]
 
-            # if train:
-            #     with tt.profile("Augment"):
-            #         augment_data(X[i], U[i], train_cfg, tt)
-
             with tt.profile("Split"):
                 Xh = X[:, :train_cfg.H]
                 Uh = U[:, :train_cfg.H]

@@ -58,20 +58,12 @@ class TrainConfig(DataStorage):
     loss_fn:            str
     huber_delta:        float
 
-    # Data augmentation
-    # Standard deviation of the generated noise
-    # This is given as a multiplier to the feature-wise standard deviation in the data
-    epsilon:            float
-    augment_prob:       float
-
     def __post_init__(self):
         env = self.get_env()
         assert env.dt <= self.history_window
         assert env.dt <= self.prediction_window
         assert 0 <= self.history_interp <= 1
         assert 0 <= self.prediction_interp <= 1
-        assert 0 <= self.epsilon <= 1
-        assert 0 <= self.augment_prob <= 1
 
     @property
     def H(self) -> int:

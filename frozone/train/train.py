@@ -47,8 +47,6 @@ def train(job: JobDescription):
         eval_size = job.eval_size,
         loss_fn = job.loss_fn,
         huber_delta = job.huber_delta,
-        epsilon = job.epsilon,
-        augment_prob = job.augment_prob,
     )
     train_results = TrainResults.empty(train_cfg.num_models)
 
