@@ -13,7 +13,7 @@ from frozone.data.dataloader import dataloader, dataset_size, load_data_files, s
 from frozone.data.process_raw_floatzone_data import TEST_SUBDIR, TRAIN_SUBDIR
 from frozone.eval import ForwardConfig, SimulationConfig
 from frozone.eval.forward import forward
-from frozone.eval.simulated_control import simulated_control
+from frozone.eval.simulated_control import simulate_control
 from frozone.model.floatzone_network import FzConfig, FzNetwork
 from frozone.plot.plot_train import plot_loss, plot_lr
 from frozone.train import TrainConfig, TrainResults
@@ -243,7 +243,7 @@ def train(job: JobDescription):
                     if env is environments.FloatZoneNNSim:
                         env.load(train_config_nnsim, train_results_nnsim)
                     with TT.profile("Simulate control"):
-                        simulated_control(
+                        simulate_control(
                             job.location,
                             env,
                             models,

@@ -1,12 +1,13 @@
-import math
 import os
-from datetime import datetime
+import pickle
+import shutil
+from pprint import pformat
 from typing import Type
 
 import numpy as np
 import torch
 from pelutils import TT, log
-from pelutils.parser import Parser
+from pelutils.parser import Option, Parser
 from tqdm import tqdm
 
 import frozone.environments as environments
@@ -14,7 +15,7 @@ from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files
 from frozone.data.dataloader import dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork, interpolate
-from frozone.plot.plot_simulated_control import plot_simulated_control
+from frozone.plot.plot_simulated_control import plot_simulated_control, plot_error, _plot_folder as sim_plot_folder
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -54,7 +55,7 @@ class ControllerStrategies:
     def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        for j, (dynamics_model, control_model) in enumerate(self.models):
+        for j, (dynamics_model, control_model) in enumerate(self.models[:1]):
             Xh, Uh, Sh = numpy_to_torch_device(
                 X[[j], seq_start:seq_mid],
                 U[[j], seq_start:seq_mid],
@@ -196,7 +197,7 @@ class ControllerStrategies:
                     self.train_results,
                 )
 
-def simulated_control(
+def simulate_control(
     path: str,
     env: Type[environments.Environment],
     models: list[tuple[FzNetwork, FzNetwork]],
@@ -207,6 +208,8 @@ def simulated_control(
     with_tqdm = False,
 ):
     simulation_cfg.save(path)
+    shutil.rmtree(os.path.join(path, sim_plot_folder), ignore_errors=True)
+    os.mkdir(os.path.join(path, sim_plot_folder))
 
     for dm, cm in models:
         dm.eval().requires_grad_(False)
@@ -215,8 +218,15 @@ def simulated_control(
     log("Simulating data")
     control_interval = simulation_cfg.control_every_steps(env, train_cfg)
 
-    for i, (metadata, (X, U, S, R, Z)) in enumerate(dataset[:simulation_cfg.num_samples]):
-        log(f"Sample {i+1:,} / {simulation_cfg.num_samples:,}")
+    # Each array has shape 4 x timesteps x number of reference values
+    # First row is the reference values
+    # Second is the values under a single model
+    # Third is under ensemble
+    # Fourth is under optimization
+    results = list()
+
+    for i, (metadata, (X, U, S, R, Z)) in enumerate(tqdm(dataset[:simulation_cfg.num_samples], position=0, disable=not with_tqdm)):
+        log.debug(f"Sample {i+1:,} / {simulation_cfg.num_samples:,}")
         timesteps = X.shape[-2]
         X_true = X.copy()
         U_true = U.copy()
@@ -242,12 +252,12 @@ def simulated_control(
         r = range((timesteps - train_cfg.H) // control_interval)
 
         TT.profile("Control")
-        for j in tqdm(r, disable=not with_tqdm):
-            with TT.profile("By model", hits=train_cfg.num_models):
+        for j in tqdm(r, position=1, disable=not with_tqdm):
+            with TT.profile("By model"):
                 controller_strategies.step_single_model(j * control_interval, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
-            with TT.profile("Ensemble", hits = simulation_cfg.num_samples):
+            with TT.profile("Ensemble"):
                 controller_strategies.step_ensemble(j * control_interval, X_pred, U_pred, S_pred, Z_pred)
-            with TT.profile("Ensemble optimized", hits = simulation_cfg.num_samples):
+            with TT.profile("Ensemble optimized"):
                 controller_strategies.step_optimized_ensemble(j * control_interval, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
 
         TT.end_profile()
@@ -294,37 +304,63 @@ def simulated_control(
                     sample_no = i,
                 )
 
+        results.append(np.stack([
+            R_true[:control_end],
+            X_pred_by_model[0][:control_end, env.reference_variables],
+            X_pred[:control_end, env.reference_variables],
+            X_pred_opt[:control_end, env.reference_variables],
+        ], axis=0))
+
+    results = np.array(results)
+
+    with TT.profile("Save results"), open(os.path.join(path, "simulation-results.pkl"), "wb") as f:
+        pickle.dump(results, f)
+
+    with TT.profile("Plot error"):
+        plot_error(path, env, train_cfg, train_results, simulation_cfg, results)
+
     for dm, cm in models:
         dm.train().requires_grad_(True)
         cm.train().requires_grad_(True)
 
 if __name__ == "__main__":
-    parser = Parser()
+    parser = Parser(
+        Option("num-simulations", default=None, type=int),
+        Option("control-window", default=None, type=int),
+        Option("opt-steps", default=10),
+        Option("step-size", default=1e-3),
+    )
     job = parser.parse_args()
 
     log.configure(os.path.join(job.location, "simulated-controller.log"))
 
     with log.log_errors:
         log.section("Loading stuff to run simulation")
+        log(pformat(vars(job)))
 
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
+        assert 0 < job.control_window <= train_cfg.prediction_window
         train_results = TrainResults.load(job.location)
 
         env = train_cfg.get_env()
         if env is environments.FloatZoneNNSim:
             env.load(TrainConfig.load(env.model_path), TrainResults.load(env.model_path))
 
-        simulation_cfg = SimulationConfig(5, train_cfg.prediction_window / 4, 10, 1e-3)
-
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
             models = [FzNetwork.load(job.location, i) for i in range(train_cfg.num_models)]
 
         log("Loading data")
+        test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
+        simulation_cfg = SimulationConfig(
+            job.num_simulations or len(test_npz_files),
+            job.control_window or train_cfg.prediction_window,
+            job.opt_steps,
+            job.step_size,
+        )
         with TT.profile("Load data"):
-            test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
-            test_dataset, _ = load_data_files(test_npz_files, train_cfg, max_num_files=simulation_cfg.num_samples, year=datetime.now().year)
+            test_dataset, _ = load_data_files(test_npz_files, train_cfg, max_num_files=simulation_cfg.num_samples)
             log(
                 "Loaded dataset",
                 f"Used test files:  {len(test_dataset):,}",
@@ -337,7 +373,7 @@ if __name__ == "__main__":
 
         log.section("Running simulated control")
         with TT.profile("Simulate control"):
-            simulated_control(
+            simulate_control(
                 job.location,
                 env,
                 models,

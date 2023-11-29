@@ -76,15 +76,16 @@ def plot_simulated_control(
             if is_x and label in env.reference_variables:
                 plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="True value")
             if is_x or label in env.predicted_control:
-                for k in range(train_cfg.num_models):
-                    plt.plot(
-                        timesteps_pred,
-                        pred_by_model[k, timesteps_pred_index, label],
-                        alpha=0.7,
-                        lw=1.2,
-                        color="grey",
-                        label="Individual predictions" if k == 0 else None,
-                    )
+                # Use for k in range(train_cfg.num_models): to plot for all models
+                k = 0
+                plt.plot(
+                    timesteps_pred,
+                    pred_by_model[k, timesteps_pred_index, label],
+                    alpha=0.7,
+                    lw=1.2,
+                    color="grey",
+                    label="Individual predictions" if k == 0 else None,
+                )
                 plt.plot(
                     timesteps_pred,
                     pred[timesteps_pred_index, label],
@@ -108,5 +109,48 @@ def plot_simulated_control(
 
         plt.suptitle(
             f"{env.__name__} controller - sample {sample_no}",
+            fontsize="xx-large",
+        )
+
+def plot_error(
+    path: str,
+    env: Type[Environment],
+    train_cfg: TrainConfig,
+    train_results: TrainResults,
+    simulation_cfg: SimulationConfig,
+    results: np.ndarray,
+):
+    control_labels = ("Single model", "Ensemble", "Optimized ensemble")
+    assert results.shape[1] == len(control_labels) + 1
+    timesteps = env.dt * np.arange(results.shape[-2])
+
+    error = np.abs(np.stack([
+        results[:, 0] - results[:, i+1] for i in range(len(control_labels))
+    ], axis=1))
+    sorted_error = np.sort(error, axis=0)
+
+    with plots.Figure(os.path.join(path, _plot_folder, "error.png"), figsize=(12.5 * len(env.reference_variables), 10)):
+        for i, rlab in enumerate(env.reference_variables):
+            plt.subplot(1, len(env.reference_variables), i + 1)
+            plt.plot([0], [0], c="grey", label="Mean")
+            plt.plot([0], [0], "--", c="grey", label="80'th %-tile")
+            plt.plot([0], [0], ":", c="grey", label="100'th %-tile")
+            plt.axvline(env.dt * train_cfg.H, c="black", label="Controller start")
+            for j, lab in enumerate(control_labels):
+                error_mean = error[:, j, :, i].mean(axis=0)
+                error_80 = sorted_error[int(0.8 * len(error)), j, :, i]
+                error_100 = sorted_error[-1, j, :, i]
+                plt.plot(timesteps, error_mean, c=plots.tab_colours[j], label=lab)
+                plt.plot(timesteps, error_80, "--", c=plots.tab_colours[j])
+                plt.plot(timesteps, error_100, ":", c=plots.tab_colours[j])
+
+            plt.legend(loc=1)
+            plt.grid()
+            plt.xlabel("Time [s]")
+            plt.ylabel(env.format_label(rlab))
+
+
+        plt.suptitle(
+            f"Error in control over {len(results):,} simulations",
             fontsize="xx-large",
         )
