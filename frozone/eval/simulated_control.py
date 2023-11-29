@@ -1,5 +1,4 @@
 import os
-import pickle
 import shutil
 from pprint import pformat
 from typing import Type
@@ -312,9 +311,7 @@ def simulate_control(
         ], axis=0))
 
     results = np.array(results)
-
-    with TT.profile("Save results"), open(os.path.join(path, "simulation-results.pkl"), "wb") as f:
-        pickle.dump(results, f)
+    np.save(os.path.join(path, "simulation-results.npy"), results)
 
     with TT.profile("Plot error"):
         plot_error(path, env, train_cfg, train_results, simulation_cfg, results)
