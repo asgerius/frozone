@@ -205,7 +205,7 @@ class Steuermann(Environment):
                 values = X[:, i_start:i_stop, ref_var]
                 a = (values[:, -1] - values[:, 0]) / (i_stop - i_start)
                 b = values[:, 0] - a * i_start
-                R[:, i_start:i_stop, i] = np.outer(a, np.arange(i_start, i_stop)) + b
+                R[:, i_start:i_stop, i] = (np.outer(a, np.arange(i_start, i_stop)).T + b).T
 
             constant_from = int(0.65 * X.shape[-2])
             R[:, constant_from:] = R[:, constant_from]
