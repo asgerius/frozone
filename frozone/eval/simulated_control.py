@@ -54,7 +54,7 @@ class ControllerStrategies:
     def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        for j, (dynamics_model, control_model) in enumerate(self.models[:1]):
+        for j, (dynamics_model, control_model) in enumerate(self.models):
             Xh, Uh, Sh = numpy_to_torch_device(
                 X[[j], seq_start:seq_mid],
                 U[[j], seq_start:seq_mid],
@@ -67,6 +67,8 @@ class ControllerStrategies:
                 Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
                 Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
             )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control]
+
+            U[[j], seq_mid:seq_control] = self.env.limit_control(U[[j], seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
             if self.env is environments.FloatZoneNNSim:
                 X[[j], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
@@ -91,7 +93,7 @@ class ControllerStrategies:
     def step_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        U[[0], seq_mid:seq_control] = 0
+        U[0, seq_mid:seq_control, self.env.predicted_control] = 0
         Xh, Uh, Sh = numpy_to_torch_device(
             X[[0], seq_start:seq_mid],
             U[[0], seq_start:seq_mid],
@@ -99,13 +101,13 @@ class ControllerStrategies:
         )
 
         for dynamics_model, control_model in self.models:
-            U[[0], seq_mid:seq_control] += interpolate(self.train_cfg.F, control_model(
+            U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, control_model(
                 interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
                 interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
                 interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
                 Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
                 Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
-            )).cpu().numpy()[:, :self.control_interval] / self.train_cfg.num_models
+            )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control] / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -132,7 +134,7 @@ class ControllerStrategies:
     def step_optimized_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
         seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
 
-        U[[0], seq_mid:seq_end] = 0
+        U[0, seq_mid:seq_end, self.env.predicted_control] = 0
 
         Xh, Uh, Sh = numpy_to_torch_device(
             X[[0], seq_start:seq_mid],
@@ -166,14 +168,15 @@ class ControllerStrategies:
 
                 loss = dynamics_model.loss(Xf_interp, Xf)
                 loss.backward()
+                Uf.grad[..., self.env.predefined_control] = 0
 
                 optimizer.step()
                 optimizer.zero_grad()
 
-            U[[0], seq_mid:seq_control] += interpolate(self.train_cfg.F, Uf) \
+            U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, Uf) \
                 .detach() \
                 .cpu() \
-                .numpy()[:, :self.control_interval] / self.train_cfg.num_models
+                .numpy()[0, :self.control_interval, self.env.predicted_control] / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -337,6 +340,7 @@ if __name__ == "__main__":
 
         log("Loading config and results")
         train_cfg = TrainConfig.load(job.location)
+        job.control_window = job.control_window or train_cfg.prediction_window
         assert 0 < job.control_window <= train_cfg.prediction_window
         train_results = TrainResults.load(job.location)
 
@@ -352,7 +356,7 @@ if __name__ == "__main__":
         test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
         simulation_cfg = SimulationConfig(
             job.num_simulations or len(test_npz_files),
-            job.control_window or train_cfg.prediction_window,
+            job.control_window,
             job.opt_steps,
             job.step_size,
         )

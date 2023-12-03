@@ -72,20 +72,21 @@ def plot_simulated_control(
                 pred_opt = U_pred_opt
                 pred_by_model = U_pred_by_model
 
-            plt.plot(timesteps_true, true[:, label], lw=1.2, label="True value")
+            # plt.plot(timesteps_true, true[:, label], lw=1.2, color="grey", label="True value")
             if is_x and label in env.reference_variables:
-                plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="True value")
+                plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="Reference")
             if is_x or label in env.predicted_control:
-                # Use for k in range(train_cfg.num_models): to plot for all models
-                k = 0
-                plt.plot(
-                    timesteps_pred,
-                    pred_by_model[k, timesteps_pred_index, label],
-                    alpha=0.7,
-                    lw=1.2,
-                    color="grey",
-                    label="Individual predictions" if k == 0 else None,
-                )
+                # To plot for all models, use
+                for k in range(train_cfg.num_models):
+                # k = 0
+                    plt.plot(
+                        timesteps_pred,
+                        pred_by_model[k, timesteps_pred_index, label],
+                        alpha=0.7,
+                        lw=1.2,
+                        color=plots.tab_colours[0],
+                        label="Individual predictions" if k == 0 else None,
+                    )
                 plt.plot(
                     timesteps_pred,
                     pred[timesteps_pred_index, label],
