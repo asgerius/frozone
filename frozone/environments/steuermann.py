@@ -40,6 +40,8 @@ class Steuermann(Environment):
     no_reference_variables = [XLabels.PolyDia, XLabels.MeltVolume, XLabels.UpperZone, XLabels.LowerZone,
                               XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle, XLabels.FullPolyDia]
 
+    predefined_control = [ULabels.CrystalPullRate]
+
     units = {
         ("X", XLabels.PolyDia):          "mm",
         ("X", XLabels.CrystalDia):       "mm",
