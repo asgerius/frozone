@@ -1,6 +1,7 @@
 import enum
 
 import numpy as np
+from pelutils.ds.plots import exp_moving_avg
 from tqdm import tqdm
 
 from frozone.environments import Environment
@@ -99,6 +100,7 @@ class Steuermann(Environment):
 
         U = np.empty((n, timesteps, len(cls.ULabels)), dtype=cls.U_dtype)
         U[:, 0] = cls.sample_init_control_vars(n)
+        U[..., cls.ULabels.CrystalPullRate] = np.vstack(timesteps * [U[:, 0, cls.ULabels.CrystalPullRate]]).T
         timevector = 60 * np.array([0,   40,  80,  120, 160, cls.dt * timesteps / 60])
         try:
             include_up_to = np.where(timevector > cls.dt * timesteps)[0][0]
@@ -111,14 +113,20 @@ class Steuermann(Environment):
             x = np.linspace(0, timevector[-1], timesteps)
             U[i, :, cls.ULabels.GeneratorVoltage] = np.interp(x, timevector, gv * np.random.uniform(0.95, 1.05, include_up_to))
             U[i, :, cls.ULabels.PolyPullRate] = np.interp(x, timevector, ppr * np.random.uniform(0.95, 1.05, include_up_to))
-        U[..., cls.ULabels.CrystalPullRate] = np.vstack(timesteps * [U[:, 0, cls.ULabels.CrystalPullRate]]).T
+
+            for uvar in cls.ULabels:
+                alpha = 0.01
+                U[i, :, uvar] = 0.5 * exp_moving_avg(U[i, :, uvar], alpha=alpha)[1] \
+                              + 0.5 * exp_moving_avg(U[i, :, uvar], alpha=alpha, reverse=True)[1]
+
+        U[..., cls.ULabels.PolyPullRate] *= np.random.uniform(0.95, 1.05)
 
         Z = np.empty((n, timesteps, len(cls.ZLabels)), dtype=cls.X_dtype)
         Z[:, 0] = cls.init_hidden_vars(U[:, 0])
 
         S = np.empty((n, timesteps, sum(cls.S_bin_count)), dtype=cls.S_dtype)
 
-        constant_time_from = np.random.uniform(0.7, 0.9, n) * timesteps
+        constant_control_from = np.random.uniform(0.65, 0.8, n) * timesteps
 
         for i in tqdm(range(timesteps-1), disable=not with_tqdm, position=tqdm_position):
             X[:, i + 1], S[:, i + 1], Z[:, i + 1] = cls.forward(
@@ -126,7 +134,7 @@ class Steuermann(Environment):
                 S[:, i], Z[:, i],
             )
             for j in range(n):
-                if i >= constant_time_from[j]:
+                if i >= constant_control_from[j]:
                     U[:, i + 1] = U[:, i]
 
         R = cls.get_reference_values(X)
@@ -187,17 +195,25 @@ class Steuermann(Environment):
 
     @classmethod
     def get_reference_values(cls, X: np.ndarray) -> np.ndarray:
+        """ X should have shape n x timesteps x process variables. """
         num_sections = 5
-        R = np.empty((len(X), len(cls.reference_variables)), dtype=cls.X_dtype)
+        R = np.empty_like(X)[..., :len(cls.reference_variables)]
 
-        index = np.linspace(0, len(X), num_sections + 1, dtype=int)
+        index = np.linspace(0, X.shape[-2], num_sections + 1, dtype=int)
         for i, ref_var in enumerate(cls.reference_variables):
             for i_start, i_stop in zip(index[:-1], index[1:], strict=True):
-                values = X[i_start:i_stop, ref_var]
-                a = (values[-1] - values[0]) / (i_stop - i_start)
-                b = values[0] - a * i_start
-                R[i_start:i_stop, i] = a * np.arange(i_start, i_stop) + b
+                values = X[:, i_start:i_stop, ref_var]
+                a = (values[:, -1] - values[:, 0]) / (i_stop - i_start)
+                b = values[:, 0] - a * i_start
+                R[:, i_start:i_stop, i] = np.outer(a, np.arange(i_start, i_stop)) + b
 
-            R[-len(X)//3:] = R[-len(X)//3]
+            constant_from = int(0.65 * X.shape[-2])
+            R[:, constant_from:] = R[:, constant_from]
+
+        # Choose target between 4, 6, and 8 inch crystals
+        crys_dia_var = cls.reference_variables.index(cls.XLabels.CrystalDia)
+        for i in range(X.shape[0]):
+            target = np.random.choice([0.5, 0.75, 1]) * 203.2
+            R[i, :, crys_dia_var] = R[i, :, crys_dia_var] * target / R[i, -1, crys_dia_var]
 
         return R

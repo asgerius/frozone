@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from typing import Type
 
 import numpy as np
+from pelutils import set_seeds
 from tqdm import tqdm
 
 import frozone.environments as environments
@@ -18,6 +19,7 @@ warnings.filterwarnings("error")
 
 def generate_in_process(args: tuple):
     env, num_simulations, timesteps, i = args
+    set_seeds(i)  # np.random and multiprocessing is a vile combination
     X, U, S, R, Z = env.simulate(num_simulations, timesteps, with_tqdm=True, tqdm_position=i)
     return X, U, S, R, Z
 
@@ -37,10 +39,10 @@ def generate(path: str, env: Type[environments.Environment], num_simulations: in
     R = np.concatenate([r[3] for r in results], axis=0)[:num_simulations]
     Z = np.concatenate([r[4] for r in results], axis=0)[:num_simulations]
 
-    # for xlab in env.XLabels:
-    #     stds = X[..., xlab].std(axis=1)
-    #     for i in range(num_simulations):
-    #         X[i, :, xlab] += np.random.uniform(0, 0.1) * (stds[i] + 0.01) * np.random.randn(timesteps)
+    for xlab in env.XLabels:
+        stds = X[..., xlab].std(axis=1)
+        for i in range(num_simulations):
+            X[i, :, xlab] += np.random.uniform(0, 0.02) * (stds[i] + 0.01) * np.random.randn(timesteps)
 
     shutil.rmtree(os.path.join(path, PROCESSED_SUBDIR), ignore_errors=True)
 
@@ -60,7 +62,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("data_path")
     parser.add_argument("-n", "--num_simulations", type=int, default=20000)
-    parser.add_argument("-t", "--time", type=float, default=15000)
+    parser.add_argument("-t", "--time", type=float, default=20000)
     parser.add_argument("-e", "--env", default="Steuermann")
     args = parser.parse_args()
 
