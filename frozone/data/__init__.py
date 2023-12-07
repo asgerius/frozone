@@ -7,6 +7,12 @@ from typing import List, Tuple
 import numpy as np
 
 
+# For simulations, the controller will start from this
+# All values before this are constant
+CONTROLLER_START = 600
+# The loss calculation from simulated controls will be discarded before this
+LOSS_START = CONTROLLER_START + 2000
+
 @dataclass
 class Metadata:
     length: int

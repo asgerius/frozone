@@ -1,7 +1,5 @@
-import multiprocessing as mp
 import os
 import shutil
-import traceback as tb
 import warnings
 from argparse import ArgumentParser
 
@@ -11,8 +9,9 @@ from pelutils import log
 from tqdm import tqdm
 from frozone.data.dataloader import load_data_files
 
-from frozone.data import PROCESSED_SUBDIR, Metadata, list_processed_data_files
+from frozone.data import PROCESSED_SUBDIR, Metadata, list_processed_data_files, CONTROLLER_START
 from frozone.data.dataloader import standardize
+from frozone.data.generate_simulated_data import preprend_constant
 from frozone.environments import FloatZoneNNSim
 from frozone.train import TrainConfig, TrainResults
 
@@ -96,6 +95,11 @@ def generate(data_path: str, floatzone_data: str):
         U = U[:simulation_length] * train_res.std_u + train_res.mean_u
         S = S[:simulation_length]
         R = R[:simulation_length] * train_res.std_x[FloatZoneNNSim.reference_variables] + train_res.mean_x[FloatZoneNNSim.reference_variables]
+
+        X = preprend_constant(FloatZoneNNSim, X)
+        U = preprend_constant(FloatZoneNNSim, U)
+        S = preprend_constant(FloatZoneNNSim, S)
+        R = preprend_constant(FloatZoneNNSim, R)
 
         outpath = used_file.replace(f"/{os.path.basename(floatzone_data)}/", f"/{os.path.basename(data_path)}/")
         os.makedirs(os.path.dirname(outpath), exist_ok=True)

@@ -71,10 +71,8 @@ class FloatZoneNNSim(FloatZone):
                     Sf = interpolate(cls.train_cfg.Fi, S[:, seq_mid:seq_end]),
                     Uf = interpolate(cls.train_cfg.Fi, U[:, seq_mid:seq_end]),
                 ) / cls.train_cfg.num_models
-                try:
-                    X[:, seq_mid:seq_end] += interpolate(cls.train_cfg.F, Xf_pred)[:, :timesteps_this_forward]
-                except:
-                    breakpoint()
+
+                X[:, seq_mid:seq_end] += interpolate(cls.train_cfg.F, Xf_pred)[:, :timesteps_this_forward]
 
             X[..., cls.XLabels.FullPolyDia] = Xh[:, -1, cls.XLabels.FullPolyDia]
             for j in range(Xh.shape[0]):

@@ -36,9 +36,9 @@ def plot_simulated_control(
     U_pred_by_model: np.ndarray,
     sample_no: int,
 ):
-    timesteps_true = np.arange(X_true.shape[0]) * env.dt
+    timesteps_true = np.arange(X_true.shape[0]) * env.dt / 3600
     timesteps_pred_index = np.arange(X_pred.shape[0])[train_cfg.H:]
-    timesteps_pred = timesteps_pred_index * env.dt
+    timesteps_pred = timesteps_pred_index * env.dt / 3600
 
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
     height = math.ceil((len(env.XLabels) + len(env.ULabels)) / width)
@@ -72,7 +72,8 @@ def plot_simulated_control(
                 pred_opt = U_pred_opt
                 pred_by_model = U_pred_by_model
 
-            # plt.plot(timesteps_true, true[:, label], lw=1.2, color="grey", label="True value")
+            if not is_x and label in env.predefined_control:
+                plt.plot(timesteps_true, true[:, label], lw=1.2, color="grey")
             if is_x and label in env.reference_variables:
                 plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="Reference")
             if is_x or label in env.predicted_control:
@@ -102,7 +103,7 @@ def plot_simulated_control(
                     label="Ensemble (opt)",
                 )
 
-            plt.xlabel("Time [s]")
+            plt.xlabel("Time [h]")
             plt.ylabel(env.format_label(label))
             plt.legend()
 
@@ -117,41 +118,30 @@ def plot_error(
     path: str,
     env: Type[Environment],
     train_cfg: TrainConfig,
-    train_results: TrainResults,
     simulation_cfg: SimulationConfig,
-    results: np.ndarray,
+    error_calcs: dict[int, dict[str, dict[str, np.ndarray]]],
 ):
-    control_labels = ("Single model", "Ensemble", "Optimized ensemble")
-    assert results.shape[1] == len(control_labels) + 1
-    timesteps = env.dt * np.arange(results.shape[-2])
-
-    error = np.abs(np.stack([
-        results[:, 0] - results[:, i+1] for i in range(len(control_labels))
-    ], axis=1))
-    sorted_error = np.sort(error, axis=0)
 
     with plots.Figure(os.path.join(path, _plot_folder, "error.png"), figsize=(12.5 * len(env.reference_variables), 10)):
-        for i, rlab in enumerate(env.reference_variables):
+        for i, rlab in enumerate(error_calcs):
             plt.subplot(1, len(env.reference_variables), i + 1)
             plt.plot([0], [0], c="grey", label="Mean")
             plt.plot([0], [0], "--", c="grey", label="80'th %-tile")
             plt.plot([0], [0], ":", c="grey", label="100'th %-tile")
-            plt.axvline(env.dt * train_cfg.H, c="black", label="Controller start")
-            for j, lab in enumerate(control_labels):
-                error_mean = error[:, j, :, i].mean(axis=0)
-                error_80 = sorted_error[int(0.8 * len(error)), j, :, i]
-                error_100 = sorted_error[-1, j, :, i]
-                plt.plot(timesteps, error_mean, c=plots.tab_colours[j], label=lab)
-                plt.plot(timesteps, error_80, "--", c=plots.tab_colours[j])
-                plt.plot(timesteps, error_100, ":", c=plots.tab_colours[j])
+            plt.axvline(env.dt * train_cfg.H / 3600, c="black", label="Controller start")
+            for j, control_method in enumerate(error_calcs[rlab]):
+                timesteps = np.arange(len(error_calcs[rlab][control_method]["error_mean"])) * env.dt / 3600
+                plt.plot(timesteps, error_calcs[rlab][control_method]["error_mean"], c=plots.tab_colours[j], label=control_method)
+                plt.plot(timesteps, error_calcs[rlab][control_method]["error_80"], "--", c=plots.tab_colours[j])
+                plt.plot(timesteps, error_calcs[rlab][control_method]["error_100"],  ":", c=plots.tab_colours[j])
 
             plt.legend(loc=1)
             plt.grid()
-            plt.xlabel("Time [s]")
+            plt.xlabel("Time [h]")
             plt.ylabel(env.format_label(rlab))
 
 
         plt.suptitle(
-            f"Error in control over {len(results):,} simulations",
+            f"Error in control over {simulation_cfg.num_samples:,} simulations",
             fontsize="xx-large",
         )

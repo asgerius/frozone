@@ -22,15 +22,16 @@ class Ball(Environment):
         F2 = 2
 
     class SLabels(enum.IntEnum):
-        F0_DECREASE = 0
-        F1_DECREASE = 1
-        F2_DECREASE = 2
+        HAS_STARTED = 0
+        F0_DECREASE = 1
+        F1_DECREASE = 2
+        F2_DECREASE = 3
 
     class ZLabels(enum.IntEnum):
         VX = 0
         VY = 1
 
-    S_bin_count = (1, 1, 1)
+    S_bin_count = (1, 1, 1, 1)
 
     _reg = 5
     control_limits = {

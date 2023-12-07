@@ -250,7 +250,7 @@ def train(job: JobDescription):
                             test_dataset,
                             train_cfg,
                             train_results,
-                            SimulationConfig(5, train_cfg.prediction_window, 10, 1e-3),
+                            SimulationConfig(100, train_cfg.prediction_window / 3, 25, 1e-3),
                         )
 
         if is_rare_checkpoint:

@@ -28,8 +28,11 @@ class Steuermann(Environment):
 
     class ULabels(enum.IntEnum):
         GeneratorVoltage = 0
-        PolyPullRate = 1
-        CrystalPullRate = 2
+        PolyPullRate     = 1
+        CrystalPullRate  = 2
+
+    class SLabels(enum.IntEnum):
+        HasStarted = 0
 
     class ZLabels(enum.IntEnum):
         Time = 0
@@ -41,6 +44,8 @@ class Steuermann(Environment):
                               XLabels.CrystalAngle, XLabels.MeltNeckDia, XLabels.PolyAngle, XLabels.FullPolyDia]
 
     predefined_control = [ULabels.CrystalPullRate]
+
+    S_bin_count = (1, )
 
     units = {
         ("X", XLabels.PolyDia):          "mm",
@@ -62,6 +67,12 @@ class Steuermann(Environment):
     _upper = 1.1
 
     _pull = 1.5
+
+    control_limits = {
+        ULabels.GeneratorVoltage: (1e-6, None),
+        ULabels.PolyPullRate:     (1e-6, None),
+        ULabels.CrystalPullRate:  (1e-6, None),
+    }
 
     @classmethod
     def sample_init_process_vars(cls, n: int) -> np.ndarray:
@@ -210,7 +221,8 @@ class Steuermann(Environment):
                 R[:, i_start:i_stop, i] = (np.outer(a, np.arange(i_start, i_stop)).T + b).T
 
             constant_from = int(0.65 * X.shape[-2])
-            R[:, constant_from:] = R[:, constant_from]
+            for j in range(R[:, constant_from:].shape[1]):
+                R[:, j + constant_from] = R[:, constant_from]
 
         # Choose target between 4, 6, and 8 inch crystals
         crys_dia_var = cls.reference_variables.index(cls.XLabels.CrystalDia)

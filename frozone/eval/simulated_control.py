@@ -5,12 +5,12 @@ from typing import Type
 
 import numpy as np
 import torch
-from pelutils import TT, log
+from pelutils import TT, log, Table
 from pelutils.parser import Option, Parser
 from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files
+from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files, CONTROLLER_START, LOSS_START
 from frozone.data.dataloader import dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork, interpolate
@@ -251,18 +251,24 @@ def simulate_control(
         Z_pred_opt = np.expand_dims(Z_true.copy(), axis=0)
 
         controller_strategies = ControllerStrategies(models, X_true, S_true, R_true, train_cfg, train_results, simulation_cfg)
-        r = range((timesteps - train_cfg.H) // control_interval)
+        control_start_step = int(CONTROLLER_START // env.dt)
+        control_step_range = range((timesteps - control_start_step) // control_interval)
 
         TT.profile("Control")
-        for j in tqdm(r, position=1, disable=not with_tqdm):
-            with TT.profile("By model"):
-                controller_strategies.step_single_model(j * control_interval, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
-            with TT.profile("Ensemble"):
-                controller_strategies.step_ensemble(j * control_interval, X_pred, U_pred, S_pred, Z_pred)
-            with TT.profile("Ensemble optimized"):
-                controller_strategies.step_optimized_ensemble(j * control_interval, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
-
-        TT.end_profile()
+        try:
+            for j in tqdm(control_step_range, position=1, disable=not with_tqdm):
+                with TT.profile("By model"):
+                    controller_strategies.step_single_model(j * control_interval + control_start_step - train_cfg.H, X_pred_by_model, U_pred_by_model, S_pred_by_model, Z_pred_by_model)
+                with TT.profile("Ensemble"):
+                    controller_strategies.step_ensemble(j * control_interval + control_start_step - train_cfg.H, X_pred, U_pred, S_pred, Z_pred)
+                with TT.profile("Ensemble optimized"):
+                    controller_strategies.step_optimized_ensemble(j * control_interval + control_start_step - train_cfg.H, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
+        except Exception as e:
+            log.error("Simulation %i failed" % i)
+            log.log_with_stacktrace(e)
+            continue
+        finally:
+            TT.end_profile()
 
         with TT.profile("Unstandardize"):
             X_true = X_true * train_results.std_x + train_results.mean_x
@@ -285,8 +291,8 @@ def simulate_control(
         S_pred_opt = S_pred_opt[0]
         Z_pred_opt = Z_pred_opt[0]
 
-        control_end = r.stop * control_interval + train_cfg.H
-        if i < 5:
+        control_end = control_step_range.stop * control_interval + control_start_step
+        if i < 10:
             with TT.profile("Plot"):
                 plot_simulated_control(
                     path = path,
@@ -316,8 +322,35 @@ def simulate_control(
     results = np.array(results)
     np.save(os.path.join(path, "simulation-results.npy"), results)
 
+    loss_start_step = int(LOSS_START // env.dt)
+
+    control_methods = ("Single model", "Ensemble", "Optimized ensemble")
+    error = np.abs(np.stack([
+        results[:, 0] - results[:, i+1] for i in range(len(control_methods))
+    ], axis=1))
+    sorted_error = np.sort(error, axis=0)
+    error_calcs = dict()
+    for i, rlab in enumerate(env.reference_variables):
+        error_table = Table()
+        error_table.add_header(["", "error_mean", "error_80", "error_100"])
+        error_calcs[rlab] = dict()
+        for j, control_method in enumerate(control_methods):
+            error_calcs[rlab][control_method] = {
+                "error_mean": error[:, j, :, i].mean(axis=0),
+                "error_80":   sorted_error[int(0.8 * len(error)), j, :, i],
+                "error_100":  sorted_error[-1, j, :, i],
+            }
+            error_table.add_row([
+                control_method,
+                "%.3f" % error_calcs[rlab][control_method]["error_mean"][loss_start_step:].mean(),
+                "%.3f" % error_calcs[rlab][control_method]["error_80"][loss_start_step:].mean(),
+                "%.3f" % error_calcs[rlab][control_method]["error_100"][loss_start_step:].mean(),
+            ], [1, 0, 0, 0])
+
+        log(f"Loss statistics for {env.format_label(rlab)}", error_table)
+
     with TT.profile("Plot error"):
-        plot_error(path, env, train_cfg, train_results, simulation_cfg, results)
+        plot_error(path, env, train_cfg, simulation_cfg, error_calcs)
 
     for dm, cm in models:
         dm.train().requires_grad_(True)
