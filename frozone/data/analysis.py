@@ -247,8 +247,8 @@ if __name__ == "__main__":
     with log.log_errors:
         log.section("Loading data")
         train_data_files = list_processed_data_files(job.location, TRAIN_SUBDIR)
-        dataset, _ = load_data_files(train_data_files, None, max_num_files=5, year=datetime.now().year)
-        full_dataset, _ = load_data_files(train_data_files, None, max_num_files=len(train_data_files))
+        dataset, _ = load_data_files(train_data_files, None, max_num_files=5, year=datetime.now().year, with_tqdm=True)
+        full_dataset, _ = load_data_files(train_data_files, None, max_num_files=len(train_data_files), with_tqdm=True)
 
         shutil.rmtree(os.path.join(job.location, _plot_folder), ignore_errors=True)
 
