@@ -31,16 +31,16 @@ options = (
     Option("alpha", type=float, default=1, help="Exponential smoothing factor"),
 
     # Model parameters
-    Option("dz", type=int, default=256),
+    Option("dz", type=int, default=120),
     Option("encoder-name", default="FullyConnected"),
     Option("decoder-name", default="FullyConnected"),
-    Option("fc-layer-num", type=int, default=3),
-    Option("fc-layer-size", type=int, default=256),
-    Option("t-layer-num", type=int, default=3),
-    Option("t-nhead", type=int, default=6),
-    Option("t-d-feedforward", type=int, default=1024),
+    Option("fc-layer-num", type=int, default=4),
+    Option("fc-layer-size", type=int, default=756),
+    Option("t-layer-num", type=int, default=4),
+    Option("t-nhead", type=int, default=4),
+    Option("t-d-feedforward", type=int, default=384),
     Option("dropout", type=float, default=0),
-    Option("activation-fn", default="ReLU"),
+    Option("activation-fn", default="GELU"),
 )
 
 if __name__ == "__main__":
