@@ -4,6 +4,7 @@ import numpy as np
 from pelutils.ds.plots import exp_moving_avg
 from tqdm import tqdm
 
+from frozone.data import CONTROLLER_START
 from frozone.environments import Environment
 from frozone.environments.steuermann_model.framework import simulate
 from frozone.environments.steuermann_model.model.model import f
@@ -212,10 +213,11 @@ class Steuermann(Environment):
         num_sections = 5
         R = np.empty_like(X)[..., :len(cls.reference_variables)]
 
-        index = np.linspace(0, X.shape[-2], num_sections + 1, dtype=int)
+        controller_start_index = int(CONTROLLER_START // cls.dt)
+        index = np.linspace(controller_start_index, X.shape[-2], num_sections + 1, dtype=int)
         for i, ref_var in enumerate(cls.reference_variables):
             for i_start, i_stop in zip(index[:-1], index[1:], strict=True):
-                values = X[:, i_start:i_stop, ref_var]
+                values = X[:, i_start:i_stop+1, ref_var]
                 a = (values[:, -1] - values[:, 0]) / (i_stop - i_start)
                 b = values[:, 0] - a * i_start
                 R[:, i_start:i_stop, i] = (np.outer(a, np.arange(i_start, i_stop)).T + b).T
@@ -223,11 +225,12 @@ class Steuermann(Environment):
             constant_from = int(0.65 * X.shape[-2])
             for j in range(R[:, constant_from:].shape[1]):
                 R[:, j + constant_from] = R[:, constant_from]
+            for j in range(controller_start_index):
+                R[:, j] = R[:, controller_start_index]
 
-        # Choose target between 4, 6, and 8 inch crystals
         crys_dia_var = cls.reference_variables.index(cls.XLabels.CrystalDia)
         for i in range(X.shape[0]):
-            target = np.random.choice([0.5, 0.75, 1]) * 203.2
+            target = 1 * 203.2  # 8 inch target crystal. Change as necessary.
             R[i, :, crys_dia_var] = R[i, :, crys_dia_var] * target / R[i, -1, crys_dia_var]
 
         return R
