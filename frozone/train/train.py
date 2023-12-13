@@ -246,7 +246,7 @@ def train(job: JobDescription):
                             test_dataset,
                             train_cfg,
                             train_results,
-                            SimulationConfig(100, train_cfg.prediction_window / 3, 25, 1e-3),
+                            SimulationConfig(10, train_cfg.prediction_window / 3, 15, 1e-3),
                         )
 
             for dynamics_model, control_model in models:
