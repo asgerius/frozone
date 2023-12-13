@@ -263,10 +263,10 @@ def simulate_control(
                     controller_strategies.step_ensemble(j * control_interval + control_start_step - train_cfg.H, X_pred, U_pred, S_pred, Z_pred)
                 with TT.profile("Ensemble optimized"):
                     controller_strategies.step_optimized_ensemble(j * control_interval + control_start_step - train_cfg.H, X_pred_opt, U_pred_opt, S_pred_opt, Z_pred_opt)
-        except Exception as e:
-            log.error("Simulation %i failed" % i)
-            log.log_with_stacktrace(e)
-            continue
+        # except Exception as e:
+        #     log.error("Simulation %i failed" % i)
+        #     log.log_with_stacktrace(e)
+        #     continue
         finally:
             TT.end_profile()
 
@@ -348,6 +348,8 @@ def simulate_control(
             ], [1, 0, 0, 0])
 
         log(f"Loss statistics for {env.format_label(rlab)}", error_table)
+
+    np.savez_compressed(os.path.join(path, "simulation-results.npy"), results=results, error=error, error_calcs=error_calcs)
 
     with TT.profile("Plot error"):
         plot_error(path, env, train_cfg, simulation_cfg, error_calcs)
