@@ -29,8 +29,8 @@ def forward(
 ):
 
     for dm, cm in models:
-        dm.requires_grad_(False)
-        cm.requires_grad_(False)
+        dm.eval().requires_grad_(False)
+        cm.eval().requires_grad_(False)
 
     sequence_length = train_cfg.H + train_cfg.F
     timesteps = forward_cfg.num_sequences * sequence_length
@@ -178,8 +178,8 @@ def forward(
         )
 
     for dm, cm in models:
-        dm.requires_grad_(True)
-        cm.requires_grad_(True)
+        dm.train().requires_grad_(True)
+        cm.train().requires_grad_(True)
 
 if __name__ == "__main__":
     parser = Parser()

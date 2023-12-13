@@ -215,10 +215,6 @@ def train(job: JobDescription):
                 plot_lr(job.location, train_cfg, train_results)
             rare_checkpoint_counter = (rare_checkpoint_counter + 1) % rare_checkpoint_every
 
-            for dynamics_model, control_model in models:
-                dynamics_model.train()
-                control_model.train()
-
             # Save training progress
             log("Saving models")
             train_cfg.save(job.location)
@@ -252,6 +248,10 @@ def train(job: JobDescription):
                             train_results,
                             SimulationConfig(100, train_cfg.prediction_window / 3, 25, 1e-3),
                         )
+
+            for dynamics_model, control_model in models:
+                dynamics_model.train()
+                control_model.train()
 
         if is_rare_checkpoint:
             log("Training time distribution", TT)
