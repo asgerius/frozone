@@ -37,6 +37,10 @@ class Transformer(EncoderH):
         x_t = self.transformer(x)
         return x_t[:, -1]
 
+    def to(self, device):
+        self.transformer.to(device)
+        return super().to(device)
+
 class GatedTransformer(EncoderH):
     """ https://arxiv.org/pdf/2103.14438.pdf """
 
