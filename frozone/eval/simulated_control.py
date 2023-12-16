@@ -10,6 +10,7 @@ from pelutils.parser import Option, Parser
 from tqdm import tqdm
 
 import frozone.environments as environments
+from frozone import amp_context
 from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files, CONTROLLER_START, LOSS_START
 from frozone.data.dataloader import dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
@@ -60,13 +61,14 @@ class ControllerStrategies:
                 U[[j], seq_start:seq_mid],
                 S[[j], seq_start:seq_mid],
             )
-            U[j, seq_mid:seq_control, self.env.predicted_control] = interpolate(self.train_cfg.F, control_model(
-                interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
-                interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
-                interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
-                Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
-                Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
-            )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control]
+            with amp_context():
+                U[j, seq_mid:seq_control, self.env.predicted_control] = interpolate(self.train_cfg.F, control_model(
+                    interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
+                    interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
+                    interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
+                    Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
+                    Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
+                )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control]
 
             U[[j], seq_mid:seq_control] = self.env.limit_control(U[[j], seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -101,13 +103,14 @@ class ControllerStrategies:
         )
 
         for dynamics_model, control_model in self.models:
-            U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, control_model(
-                interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
-                interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
-                interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
-                Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
-                Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
-            )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control] / self.train_cfg.num_models
+            with amp_context():
+                U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, control_model(
+                    interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
+                    interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
+                    interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
+                    Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
+                    Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
+                )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control] / self.train_cfg.num_models
 
         U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
@@ -160,11 +163,12 @@ class ControllerStrategies:
             optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
 
             for _ in range(self.simulation_cfg.opt_steps):
-                Xf = dynamics_model(
-                    Xh_interp, Uh_interp, Sh_interp,
-                    Sf = Sf_interp,
-                    Uf = Uf,
-                )
+                with amp_context():
+                    Xf = dynamics_model(
+                        Xh_interp, Uh_interp, Sh_interp,
+                        Sf = Sf_interp,
+                        Uf = Uf,
+                    )
 
                 loss = dynamics_model.loss(Xf_interp, Xf)
                 loss.backward()
