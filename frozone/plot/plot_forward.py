@@ -41,7 +41,7 @@ def plot_forward(
     shutil.rmtree(os.path.join(path, _plot_folder), ignore_errors=True)
 
     sequence_length = train_cfg.H + train_cfg.F
-    timesteps = np.arange(forward_cfg.num_sequences * sequence_length) * env.dt
+    timesteps = env.dt * np.arange(forward_cfg.num_sequences * sequence_length) / 3600
 
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
     height = math.ceil((len(env.XLabels) + len(env.ULabels)) / width)
@@ -83,7 +83,7 @@ def plot_forward(
 
                 plt.plot(timesteps, true[i, :, label], color="grey", label="True value")
                 if is_x and label in env.reference_variables:
-                    plt.plot(timesteps, R_true[i, :, env.reference_variables.index(label)], color="red", label="Reference")
+                    plt.plot(timesteps, R_true[i, :, env.reference_variables.index(label)], color="red", label="Target")
 
                 for k in range(forward_cfg.num_sequences):
                     seq_start = k * sequence_length
@@ -127,7 +127,7 @@ def plot_forward(
                             label="Ensemble (ref)" if k == 0 else None,
                         )
 
-                plt.xlabel("Time [s]")
+                plt.xlabel("Time [h]")
                 plt.ylabel(env.format_label(label))
                 plt.legend()
 

@@ -75,7 +75,7 @@ def plot_simulated_control(
             if not is_x and label in env.predefined_control:
                 plt.plot(timesteps_true, true[:, label], lw=1.2, color="grey")
             if is_x and label in env.reference_variables:
-                plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="Reference")
+                plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="Target")
             if is_x or label in env.predicted_control:
                 # To plot for all models, use
                 for k in range(train_cfg.num_models):

@@ -48,20 +48,20 @@ class Steuermann(Environment):
 
     S_bin_count = (1, )
 
-    units = {
-        ("X", XLabels.PolyDia):          "mm",
-        ("X", XLabels.CrystalDia):       "mm",
-        ("X", XLabels.UpperZone):        "mm",
-        ("X", XLabels.LowerZone):        "mm",
-        ("X", XLabels.FullZone):         "mm",
-        ("X", XLabels.MeltVolume):       "cm$^3$",
-        ("X", XLabels.CrystalAngle):     "deg",
-        ("X", XLabels.MeltNeckDia):      "mm",
-        ("X", XLabels.PolyAngle):        "deg",
-        ("X", XLabels.FullPolyDia):      "mm",
-        ("U", ULabels.GeneratorVoltage): "kV",
-        ("U", ULabels.PolyPullRate):     "mm/min",
-        ("U", ULabels.CrystalPullRate):  "mm/min",
+    format = {
+        ("X", XLabels.PolyDia):          "Poly diameter [mm]",
+        ("X", XLabels.CrystalDia):       "Crystal diameter [mm]",
+        ("X", XLabels.UpperZone):        "Upper zone height [mm]",
+        ("X", XLabels.LowerZone):        "Lower zone height [mm]",
+        ("X", XLabels.FullZone):         "Full zone height [mm]",
+        ("X", XLabels.MeltVolume):       "Melt volume [cm$^3$]",
+        ("X", XLabels.CrystalAngle):     "Crystal angle [deg]",
+        ("X", XLabels.MeltNeckDia):      "Melt neck diameter [mm]",
+        ("X", XLabels.PolyAngle):        "Poly angle [deg]",
+        ("X", XLabels.FullPolyDia):      "Full poly diameter [mm]",
+        ("U", ULabels.GeneratorVoltage): "Generator voltage [kV]",
+        ("U", ULabels.PolyPullRate):     "Poly pull rate [mm$/$min]",
+        ("U", ULabels.CrystalPullRate):  "Crystal pull rate [mm$/$min]",
     }
 
     _lower = 0.9

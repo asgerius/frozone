@@ -1,7 +1,6 @@
 """ Standalone script for analyzing environment data. """
 import math
 import os
-import random
 import shutil
 from datetime import datetime
 from glob import glob as glob  # glob
@@ -16,6 +15,7 @@ from pelutils.parser import Parser, Option, JobDescription
 import frozone.environments as environments
 from frozone.data import PHASE_TO_INDEX, PHASES, PROCESSED_SUBDIR, TRAIN_SUBDIR, Dataset, list_processed_data_files
 from frozone.data.dataloader import load_data_files
+from frozone.plot import get_figure_args
 
 
 _plot_folder = "analysis-plots"
@@ -24,7 +24,7 @@ def analyse_full_floatzone_data(job: JobDescription, dataset: Dataset):
 
     env = environments.FloatZone
 
-    with plots.Figure(os.path.join(job.location, _plot_folder, f"phase-dist.png"), figsize=(25, 18)):
+    with plots.Figure(os.path.join(job.location, _plot_folder, f"phase-dist.pdf"), **get_figure_args(1, 1)):
         for phase, phase_index in PHASE_TO_INDEX.items():
             counts = list()
             for metadata, (X, U, S, R, Z) in dataset:
@@ -34,8 +34,8 @@ def analyse_full_floatzone_data(job: JobDescription, dataset: Dataset):
 
             plt.subplot(2, 3, phase_index + 1)
 
-            plt.hist(env.dt * np.array(counts), bins=30)
-            plt.xlabel("Time [s]")
+            plt.hist(env.dt * np.array(counts) / 3600, bins=30)
+            plt.xlabel("Time [h]")
             plt.ylabel("Count")
             plt.title(PHASES[phase])
 
@@ -49,11 +49,13 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
 
     log("Plotting %i samples" % len(dataset))
     for i, (metadata, (X, U, S, R, Z)) in enumerate(dataset):
-        with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
+        with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_{i}.pdf"), **get_figure_args(rows, columns)):
             subplot_no = 0
 
             if is_floatzone:
                 for xlabel in env.XLabels:
+                    if xlabel is environments.FloatZone.XLabels.FullPolyDia:
+                        continue
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
                     for phase_num, phase_index in PHASE_TO_INDEX.items():
@@ -63,21 +65,21 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                             env.dt * np.where(is_phase)[0],
                             X[is_phase, xlabel],
                             color=plots.colours[phase_index],
-                            lw=1.5,
+                            lw=2,
                         )
                         if xlabel in env.reference_variables:
                             plt.plot(
-                                env.dt * np.where(is_phase)[0],
+                                env.dt * np.where(is_phase)[0] / 3600,
                                 R[is_phase, env.reference_variables.index(xlabel)],
                                 color="red",
-                                lw=1.2,
-                                label="Reference" if phase_index == 0 else None,
+                                lw=1.6,
+                                label="Target" if phase_index == 0 else None,
                             )
 
                     if xlabel in env.reference_variables:
                         plt.legend()
-                    plt.xlabel("Time [s]")
-                    plt.title(env.format_label(xlabel))
+                    plt.xlabel("Time [h]")
+                    plt.ylabel(env.format_label(xlabel))
                     plt.grid()
 
                 for ulabel in env.ULabels:
@@ -86,19 +88,21 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                     for phase_num, phase_index in PHASE_TO_INDEX.items():
                         phase_name = PHASES[phase_num]
                         is_phase = S[:, phase_index] == 1
-                        plt.plot(env.dt * np.where(is_phase)[0], U[is_phase, ulabel], plots.colours[phase_index], lw=1.5)
-                    plt.xlabel("Time [s]")
+                        plt.plot(env.dt * np.where(is_phase)[0] / 3600, U[is_phase, ulabel], plots.colours[phase_index], lw=2)
+                    plt.xlabel("Time [h]")
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
             else:
                 for xlabel in env.XLabels:
+                    if xlabel is environments.Steuermann.XLabels.FullPolyDia:
+                        continue
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=1.5, label="Observed")
+                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=2, label="Observed")
                     if xlabel in env.reference_variables:
-                        plt.plot(env.dt * np.arange(len(X)), R[:, env.reference_variables.index(xlabel)], lw=1.5, color="red", label="Reference")
-                    plt.xlabel("Time [s]")
+                        plt.plot(env.dt * np.arange(len(X)) / 3600, R[:, env.reference_variables.index(xlabel)], lw=2, color="red", label="Target")
+                    plt.xlabel("Time [h]")
                     plt.title(env.format_label(xlabel))
                     plt.legend()
                     plt.grid()
@@ -106,16 +110,16 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 for ulabel in env.ULabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(U)), U[:, ulabel], lw=1.5)
-                    plt.xlabel("Time [s]")
+                    plt.plot(env.dt * np.arange(len(U)) / 3600, U[:, ulabel], lw=2)
+                    plt.xlabel("Time [h]")
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
                 for zlabel in env.ZLabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(Z)), Z[:, zlabel], lw=1.5)
-                    plt.xlabel("Time [s]")
+                    plt.plot(env.dt * np.arange(len(Z)) / 3600, Z[:, zlabel], lw=2)
+                    plt.xlabel("Time [h]")
                     plt.title(env.format_label(zlabel))
                     plt.grid()
 
@@ -125,13 +129,12 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 for phase_num, phase_index in PHASE_TO_INDEX.items():
                     phase_name = PHASES[phase_num]
                     is_phase = S[:, phase_index] == 1
-                    plt.plot(env.dt * np.where(is_phase)[0], np.full(is_phase.sum(), phase_index), plots.colours[phase_index], lw=4, label=phase_name)
-                plt.xlabel("Time [s]")
-                plt.title("Phase")
-                plt.legend(loc="lower right")
+                    plt.plot(env.dt * np.where(is_phase)[0] / 3600, np.full(is_phase.sum(), phase_index), plots.colours[phase_index], lw=4, label=phase_name)
+                plt.xlabel("Time [h]")
+                plt.legend(ncol=3)
                 plt.grid()
 
-            plt.suptitle(os.path.split(metadata.raw_file or "Simulation")[-1] + f" ({metadata.date.year})", fontsize="xx-large")
+            # plt.suptitle(os.path.split(metadata.raw_file or "Simulation")[-1] + f" ({metadata.date.year})", fontsize="xx-large")
 
 def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
 
@@ -158,29 +161,31 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
             U = U_full[is_phase]
             R = R_full[is_phase]
 
-            with plots.Figure(os.path.join(plot_folder, f"sample_{i}.png"), figsize=(15 * columns, 10 * rows)):
+            with plots.Figure(os.path.join(plot_folder, f"sample_{i}.pdf"), **get_figure_args(rows, columns)):
                 subplot_no = 0
 
                 for xlabel in env.XLabels:
+                    if xlabel is env.XLabels.FullPolyDia:
+                        continue
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(np.arange(len(X)) * env.dt, X[:, xlabel], lw=1.5, label="Observed")
+                    plt.plot(env.dt * np.arange(len(X)) / 3600, X[:, xlabel], lw=2, label="Observed")
                     if xlabel in env.reference_variables:
-                        plt.plot(env.dt * np.arange(len(R)), R[:, env.reference_variables.index(xlabel)], lw=1.5, label="Reference")
+                        plt.plot(env.dt * np.arange(len(R)) / 3600, R[:, env.reference_variables.index(xlabel)], lw=2, c="red", label="Target")
                         plt.legend()
-                    plt.xlabel("Time [s]")
+                    plt.xlabel("Time [h]")
                     plt.title(env.format_label(xlabel))
                     plt.grid()
 
                 for ulabel in env.ULabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(np.arange(len(U)) * env.dt, U[:, ulabel], lw=1.5)
-                    plt.xlabel("Time [s]")
+                    plt.plot(env.dt * np.arange(len(U)) / 3600, U[:, ulabel], lw=2)
+                    plt.xlabel("Time [h]")
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
-                plt.suptitle(f"{phase_name} from {os.path.split(metadata.raw_file)[-1]} ({metadata.date.year})", fontsize="xx-large")
+                # plt.suptitle(f"{phase_name} from {os.path.split(metadata.raw_file)[-1]} ({metadata.date.year})", fontsize="xx-large")
 
 def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, true_dataset: Dataset):
 
@@ -189,7 +194,7 @@ def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, 
 
     log("Plotting %i simulation samples" % len(dataset))
     for i, ((metadata_sim, (X_sim, U_sim, S_sim, R_sim)), (metadata_true, (X_true, U_true, S_true, R_true))) in enumerate(zip(sim_dataset, true_dataset)):
-        with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_sim_{i}.png"), figsize=(15 * columns, 10 * rows)):
+        with plots.Figure(os.path.join(job.location, _plot_folder, f"sample_sim_{i}.pdf"), **get_figure_args(rows, columns)):
             subplot_no = 0
             is_phase = environments.FloatZone.is_phase("Cone", S_true)
             phase_index = PHASE_TO_INDEX[512]
@@ -198,27 +203,27 @@ def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, 
                 subplot_no += 1
                 plt.subplot(rows, columns, subplot_no)
                 plt.plot(
-                    env.dt * np.where(is_phase)[0],
+                    env.dt * np.where(is_phase)[0] / 3600,
                     X_true[is_phase, xlabel],
-                    lw=1.5,
+                    lw=2,
                     label="Observed",
                 )
                 plt.plot(
-                    env.dt * np.where(is_phase)[0],
+                    env.dt * np.where(is_phase)[0] / 3600,
                     X_sim[:, xlabel],
-                    lw=1.5,
+                    lw=2,
                     label="Simulated",
                 )
                 if xlabel in env.reference_variables:
                     plt.plot(
-                        env.dt * np.where(is_phase)[0],
+                        env.dt * np.where(is_phase)[0] / 3600,
                         R_true[is_phase, env.reference_variables.index(xlabel)],
-                        color="black",
-                        lw=1.2,
-                        label="Reference",
+                        color="red",
+                        lw=1.6,
+                        label="Target",
                     )
 
-                plt.xlabel("Time [s]")
+                plt.xlabel("Time [h]")
                 plt.title(env.format_label(xlabel))
                 plt.grid()
                 plt.legend()
@@ -226,14 +231,14 @@ def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, 
             for ulabel in env.ULabels:
                 subplot_no += 1
                 plt.subplot(rows, columns, subplot_no)
-                plt.plot(env.dt * np.where(is_phase)[0], U_true[is_phase, ulabel], lw=1.5, label="Observed")
-                plt.plot(env.dt * np.where(is_phase)[0], U_sim[:, ulabel], lw=1, label="Simulated")
-                plt.xlabel("Time [s]")
+                plt.plot(env.dt * np.where(is_phase)[0], U_true[is_phase, ulabel] / 3600, lw=2, label="Observed")
+                plt.plot(env.dt * np.where(is_phase)[0], U_sim[:, ulabel] / 3600, lw=1.6, label="Simulated")
+                plt.xlabel("Time [h]")
                 plt.title(env.format_label(ulabel))
                 plt.grid()
                 plt.legend()
 
-            plt.suptitle(os.path.split(metadata_true.raw_file or "Simulation")[-1] + f" ({metadata_true.date.year})", fontsize="xx-large")
+            # plt.suptitle(os.path.split(metadata_true.raw_file or "Simulation")[-1] + f" ({metadata_true.date.year})", fontsize="xx-large")
 
 if __name__ == "__main__":
     parser = Parser(

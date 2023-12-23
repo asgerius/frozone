@@ -45,7 +45,7 @@ class Environment(abc.ABC):
 
     control_limits: dict[ULabels, tuple[float | None, float | None]] = dict()
 
-    units: dict[tuple[str, enum.IntEnum], str] = dict()
+    format: dict[tuple[str, enum.IntEnum], str] = dict()
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -58,9 +58,9 @@ class Environment(abc.ABC):
     def format_label(cls, label: enum.IntEnum):
         label_class = label.__class__.__name__[0]
         label_name = label.name
-        unit = cls.units.get((label_class, label))
-        if unit is not None:
-            return f"{label_class} {label_name} [{unit}]"
+        format = cls.format.get((label_class, label))
+        if format is not None:
+            return format
         else:
             return f"{label_class} {label_name}"
 
