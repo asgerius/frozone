@@ -62,24 +62,23 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                         phase_name = PHASES[phase_num]
                         is_phase = S[:, phase_index] == 1
                         plt.plot(
-                            env.dt * np.where(is_phase)[0],
+                            env.dt * np.where(is_phase)[0] / 3600,
                             X[is_phase, xlabel],
                             color=plots.colours[phase_index],
-                            lw=2,
                         )
                         if xlabel in env.reference_variables:
                             plt.plot(
                                 env.dt * np.where(is_phase)[0] / 3600,
                                 R[is_phase, env.reference_variables.index(xlabel)],
                                 color="red",
-                                lw=1.6,
+                                lw=3,
                                 label="Target" if phase_index == 0 else None,
                             )
 
                     if xlabel in env.reference_variables:
                         plt.legend()
                     plt.xlabel("Time [h]")
-                    plt.ylabel(env.format_label(xlabel))
+                    plt.title(env.format_label(xlabel))
                     plt.grid()
 
                 for ulabel in env.ULabels:
@@ -88,7 +87,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                     for phase_num, phase_index in PHASE_TO_INDEX.items():
                         phase_name = PHASES[phase_num]
                         is_phase = S[:, phase_index] == 1
-                        plt.plot(env.dt * np.where(is_phase)[0] / 3600, U[is_phase, ulabel], plots.colours[phase_index], lw=2)
+                        plt.plot(env.dt * np.where(is_phase)[0] / 3600, U[is_phase, ulabel], plots.colours[phase_index])
                     plt.xlabel("Time [h]")
                     plt.title(env.format_label(ulabel))
                     plt.grid()
@@ -99,9 +98,9 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                         continue
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], lw=2, label="Observed")
+                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], label="Observed")
                     if xlabel in env.reference_variables:
-                        plt.plot(env.dt * np.arange(len(X)) / 3600, R[:, env.reference_variables.index(xlabel)], lw=2, color="red", label="Target")
+                        plt.plot(env.dt * np.arange(len(X)) / 3600, R[:, env.reference_variables.index(xlabel)], color="red", label="Target")
                     plt.xlabel("Time [h]")
                     plt.title(env.format_label(xlabel))
                     plt.legend()
@@ -110,7 +109,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 for ulabel in env.ULabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(U)) / 3600, U[:, ulabel], lw=2)
+                    plt.plot(env.dt * np.arange(len(U)) / 3600, U[:, ulabel])
                     plt.xlabel("Time [h]")
                     plt.title(env.format_label(ulabel))
                     plt.grid()
@@ -118,7 +117,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 for zlabel in env.ZLabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(Z)) / 3600, Z[:, zlabel], lw=2)
+                    plt.plot(env.dt * np.arange(len(Z)) / 3600, Z[:, zlabel])
                     plt.xlabel("Time [h]")
                     plt.title(env.format_label(zlabel))
                     plt.grid()
@@ -129,7 +128,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                 for phase_num, phase_index in PHASE_TO_INDEX.items():
                     phase_name = PHASES[phase_num]
                     is_phase = S[:, phase_index] == 1
-                    plt.plot(env.dt * np.where(is_phase)[0] / 3600, np.full(is_phase.sum(), phase_index), plots.colours[phase_index], lw=4, label=phase_name)
+                    plt.plot(env.dt * np.where(is_phase)[0] / 3600, np.full(is_phase.sum(), phase_index), plots.colours[phase_index], lw=5, label=phase_name)
                 plt.xlabel("Time [h]")
                 plt.legend(ncol=3)
                 plt.grid()
@@ -169,9 +168,9 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
                         continue
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(X)) / 3600, X[:, xlabel], lw=2, label="Observed")
+                    plt.plot(env.dt * np.arange(len(X)) / 3600, X[:, xlabel], label="Observed")
                     if xlabel in env.reference_variables:
-                        plt.plot(env.dt * np.arange(len(R)) / 3600, R[:, env.reference_variables.index(xlabel)], lw=2, c="red", label="Target")
+                        plt.plot(env.dt * np.arange(len(R)) / 3600, R[:, env.reference_variables.index(xlabel)], lw=3, c="red", label="Target")
                         plt.legend()
                     plt.xlabel("Time [h]")
                     plt.title(env.format_label(xlabel))
@@ -180,7 +179,7 @@ def analyse_processed_data_floatzone(job: JobDescription, dataset: Dataset):
                 for ulabel in env.ULabels:
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(U)) / 3600, U[:, ulabel], lw=2)
+                    plt.plot(env.dt * np.arange(len(U)) / 3600, U[:, ulabel])
                     plt.xlabel("Time [h]")
                     plt.title(env.format_label(ulabel))
                     plt.grid()
@@ -205,13 +204,11 @@ def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, 
                 plt.plot(
                     env.dt * np.where(is_phase)[0] / 3600,
                     X_true[is_phase, xlabel],
-                    lw=2,
                     label="Observed",
                 )
                 plt.plot(
                     env.dt * np.where(is_phase)[0] / 3600,
                     X_sim[:, xlabel],
-                    lw=2,
                     label="Simulated",
                 )
                 if xlabel in env.reference_variables:
@@ -219,7 +216,7 @@ def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, 
                         env.dt * np.where(is_phase)[0] / 3600,
                         R_true[is_phase, env.reference_variables.index(xlabel)],
                         color="red",
-                        lw=1.6,
+                        lw=3,
                         label="Target",
                     )
 
@@ -231,8 +228,8 @@ def analyse_simulated_data_floatzone(job: JobDescription, sim_dataset: Dataset, 
             for ulabel in env.ULabels:
                 subplot_no += 1
                 plt.subplot(rows, columns, subplot_no)
-                plt.plot(env.dt * np.where(is_phase)[0], U_true[is_phase, ulabel] / 3600, lw=2, label="Observed")
-                plt.plot(env.dt * np.where(is_phase)[0], U_sim[:, ulabel] / 3600, lw=1.6, label="Simulated")
+                plt.plot(env.dt * np.where(is_phase)[0], U_true[is_phase, ulabel] / 3600, label="Observed")
+                plt.plot(env.dt * np.where(is_phase)[0], U_sim[:, ulabel] / 3600, lw=3, label="Simulated")
                 plt.xlabel("Time [h]")
                 plt.title(env.format_label(ulabel))
                 plt.grid()
