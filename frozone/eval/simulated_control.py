@@ -7,11 +7,12 @@ import numpy as np
 import torch
 from pelutils import TT, log, Table
 from pelutils.parser import Option, Parser
+from pelutils.ds.stats import z
 from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone import amp_context
-from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files, CONTROLLER_START, LOSS_START
+from frozone import amp_context, cuda_sync
+from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files, CONTROLLER_START
 from frozone.data.dataloader import dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork, interpolate
@@ -44,7 +45,7 @@ class ControllerStrategies:
         self.env = self.train_cfg.get_env()
         self.control_interval = simulation_cfg.control_every_steps(self.env, train_cfg)
 
-    def sequences(self, step: int) -> tuple[int, int, int, int]:
+    def get_sequence(self, step: int) -> tuple[int, int, int, int]:
         seq_start = step
         seq_mid = seq_start + self.train_cfg.H
         seq_control = seq_mid + self.control_interval
@@ -53,7 +54,7 @@ class ControllerStrategies:
 
     @torch.inference_mode()
     def step_single_model(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
-        seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
+        seq_start, seq_mid, seq_control, seq_end = self.get_sequence(step)
 
         for j, (dynamics_model, control_model) in enumerate(self.models):
             Xh, Uh, Sh = numpy_to_torch_device(
@@ -61,7 +62,17 @@ class ControllerStrategies:
                 U[[j], seq_start:seq_mid],
                 S[[j], seq_start:seq_mid],
             )
-            with amp_context():
+            if step == 0:
+                # GPU warmup
+                control_model(
+                    interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
+                    interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
+                    interpolate(self.train_cfg.Hi, Sh, self.train_cfg, h=True),
+                    Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
+                    Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
+                )
+                cuda_sync()
+            with TT.profile("Predict"), amp_context():
                 U[j, seq_mid:seq_control, self.env.predicted_control] = interpolate(self.train_cfg.F, control_model(
                     interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
                     interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
@@ -69,31 +80,34 @@ class ControllerStrategies:
                     Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
                     Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
                 )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control]
+                cuda_sync()
 
-            U[[j], seq_mid:seq_control] = self.env.limit_control(U[[j], seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
+            with TT.profile("Limit control"):
+                U[[j], seq_mid:seq_control] = self.env.limit_control(U[[j], seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
-            if self.env is environments.FloatZoneNNSim:
-                X[[j], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
-                    X[[j], seq_start:seq_mid],
-                    U[[j], seq_start:seq_mid],
-                    S[[j], seq_start:seq_mid],
-                    S[[j], seq_mid:seq_end],
-                    U[[j], seq_mid:seq_end],
-                    self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
-                )
-            else:
-                for i in range(self.control_interval):
-                    X[[j], seq_mid + i], S[[j], seq_mid + i], Z[[j], seq_mid + i] = self.env.forward_standardized(
-                        X[[j], seq_mid+i-1],
-                        U[[j], seq_mid+i-1],
-                        S[[j], seq_mid+i-1],
-                        Z[[j], seq_mid+i-1],
-                        self.train_results,
+            with TT.profile("Forward"):
+                if self.env is environments.FloatZoneNNSim:
+                    X[[j], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
+                        X[[j], seq_start:seq_mid],
+                        U[[j], seq_start:seq_mid],
+                        S[[j], seq_start:seq_mid],
+                        S[[j], seq_mid:seq_end],
+                        U[[j], seq_mid:seq_end],
+                        self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
                     )
+                else:
+                    for i in range(self.control_interval):
+                        X[[j], seq_mid + i], S[[j], seq_mid + i], Z[[j], seq_mid + i] = self.env.forward_standardized(
+                            X[[j], seq_mid+i-1],
+                            U[[j], seq_mid+i-1],
+                            S[[j], seq_mid+i-1],
+                            Z[[j], seq_mid+i-1],
+                            self.train_results,
+                        )
 
     @torch.inference_mode()
     def step_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
-        seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
+        seq_start, seq_mid, seq_control, seq_end = self.get_sequence(step)
 
         U[0, seq_mid:seq_control, self.env.predicted_control] = 0
         Xh, Uh, Sh = numpy_to_torch_device(
@@ -103,7 +117,7 @@ class ControllerStrategies:
         )
 
         for dynamics_model, control_model in self.models:
-            with amp_context():
+            with TT.profile("Predict"), amp_context():
                 U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, control_model(
                     interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
                     interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
@@ -111,31 +125,34 @@ class ControllerStrategies:
                     Sf = interpolate(self.train_cfg.Fi, self.S_true_d[:, seq_mid:seq_end]),
                     Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
                 )).cpu().numpy()[0, :self.control_interval, self.env.predicted_control] / self.train_cfg.num_models
+                cuda_sync()
 
-        U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
+        with TT.profile("Limit control"):
+            U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
-        if self.env is environments.FloatZoneNNSim:
-            X[[0], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
-                X[[0], seq_start:seq_mid],
-                U[[0], seq_start:seq_mid],
-                S[[0], seq_start:seq_mid],
-                S[[0], seq_mid:seq_end],
-                U[[0], seq_mid:seq_end],
-                self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
-            )
-        else:
-            for i in range(self.control_interval):
-                X[[0], seq_mid + i], S[[0], seq_mid + i], Z[[0], seq_mid + i] = self.env.forward_standardized(
-                    X[[0], seq_mid+i-1],
-                    U[[0], seq_mid+i-1],
-                    S[[0], seq_mid+i-1],
-                    Z[[0], seq_mid+i-1],
-                    self.train_results,
+        with TT.profile("Forward"):
+            if self.env is environments.FloatZoneNNSim:
+                X[[0], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
+                    X[[0], seq_start:seq_mid],
+                    U[[0], seq_start:seq_mid],
+                    S[[0], seq_start:seq_mid],
+                    S[[0], seq_mid:seq_end],
+                    U[[0], seq_mid:seq_end],
+                    self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
                 )
+            else:
+                for i in range(self.control_interval):
+                    X[[0], seq_mid + i], S[[0], seq_mid + i], Z[[0], seq_mid + i] = self.env.forward_standardized(
+                        X[[0], seq_mid+i-1],
+                        U[[0], seq_mid+i-1],
+                        S[[0], seq_mid+i-1],
+                        Z[[0], seq_mid+i-1],
+                        self.train_results,
+                    )
 
     @torch.inference_mode(False)
     def step_optimized_ensemble(self, step: int, X: np.ndarray, U: np.ndarray, S: np.ndarray, Z: np.ndarray):
-        seq_start, seq_mid, seq_control, seq_end = self.sequences(step)
+        seq_start, seq_mid, seq_control, seq_end = self.get_sequence(step)
 
         U[0, seq_mid:seq_end, self.env.predicted_control] = 0
 
@@ -153,55 +170,61 @@ class ControllerStrategies:
         Xf_interp[..., self.env.reference_variables] = Rf_interp
 
         for dynamics_model, control_model in self.models:
-            with torch.no_grad():
+            with TT.profile("Predict"), torch.no_grad():
                 Uf = control_model(
                     Xh_interp, Uh_interp, Sh_interp,
                     Sf = Sf_interp,
                     Xf = Rf_interp
                 )
+                cuda_sync()
             Uf.requires_grad_()
             optimizer = torch.optim.AdamW([Uf], lr=self.simulation_cfg.step_size)
 
             for _ in range(self.simulation_cfg.opt_steps):
-                with amp_context():
-                    Xf = dynamics_model(
-                        Xh_interp, Uh_interp, Sh_interp,
-                        Sf = Sf_interp,
-                        Uf = Uf,
-                    )
+                with TT.profile("Step"):
+                    with amp_context():
+                        Xf = dynamics_model(
+                            Xh_interp, Uh_interp, Sh_interp,
+                            Sf = Sf_interp,
+                            Uf = Uf,
+                        )
 
-                loss = dynamics_model.loss(Xf_interp, Xf)
-                loss.backward()
-                Uf.grad[..., self.env.predefined_control] = 0
+                    loss = dynamics_model.loss(Xf_interp, Xf)
+                    loss.backward()
+                    Uf.grad[..., self.env.predefined_control] = 0
 
-                optimizer.step()
-                optimizer.zero_grad()
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                    cuda_sync()
 
             U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, Uf) \
                 .detach() \
                 .cpu() \
                 .numpy()[0, :self.control_interval, self.env.predicted_control] / self.train_cfg.num_models
 
-        U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
+        with TT.profile("Limit control"):
+            U[:, seq_mid:seq_control] = self.env.limit_control(U[:, seq_mid:seq_control], mean=self.train_results.mean_u, std=self.train_results.std_u)
 
-        if self.env is environments.FloatZoneNNSim:
-            X[[0], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
-                X[[0], seq_start:seq_mid],
-                U[[0], seq_start:seq_mid],
-                S[[0], seq_start:seq_mid],
-                S[[0], seq_mid:seq_end],
-                U[[0], seq_mid:seq_end],
-                self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
-            )
-        else:
-            for i in range(self.control_interval):
-                X[:, seq_mid + i], S[:, seq_mid + i], Z[:, seq_mid + i] = self.env.forward_standardized(
-                    X[:, seq_mid+i-1],
-                    U[:, seq_mid+i-1],
-                    S[:, seq_mid+i-1],
-                    Z[:, seq_mid+i-1],
-                    self.train_results,
+        with TT.profile("Forward"):
+            if self.env is environments.FloatZoneNNSim:
+                X[[0], seq_mid:seq_control] = environments.FloatZoneNNSim.forward_standardized_multiple(
+                    X[[0], seq_start:seq_mid],
+                    U[[0], seq_start:seq_mid],
+                    S[[0], seq_start:seq_mid],
+                    S[[0], seq_mid:seq_end],
+                    U[[0], seq_mid:seq_end],
+                    self.simulation_cfg.control_every_steps(self.env, self.train_cfg),
                 )
+            else:
+                for i in range(self.control_interval):
+                    X[:, seq_mid + i], S[:, seq_mid + i], Z[:, seq_mid + i] = self.env.forward_standardized(
+                        X[:, seq_mid+i-1],
+                        U[:, seq_mid+i-1],
+                        S[:, seq_mid+i-1],
+                        Z[:, seq_mid+i-1],
+                        self.train_results,
+                    )
 
 def simulate_control(
     path: str,
@@ -223,6 +246,7 @@ def simulate_control(
 
     log("Simulating data")
     control_interval = simulation_cfg.control_every_steps(env, train_cfg)
+    control_start_step = int(CONTROLLER_START // env.dt)
 
     # Each array has shape 4 x timesteps x number of reference values
     # First row is the reference values
@@ -255,7 +279,6 @@ def simulate_control(
         Z_pred_opt = np.expand_dims(Z_true.copy(), axis=0)
 
         controller_strategies = ControllerStrategies(models, X_true, S_true, R_true, train_cfg, train_results, simulation_cfg)
-        control_start_step = int(CONTROLLER_START // env.dt)
         control_step_range = range((timesteps - control_start_step) // control_interval)
 
         TT.profile("Control")
@@ -326,8 +349,6 @@ def simulate_control(
     results = np.array(results)
     np.save(os.path.join(path, "simulation-results.npy"), results)
 
-    loss_start_step = int(LOSS_START // env.dt)
-
     control_methods = ("Single model", "Ensemble", "Optimized ensemble")
     error = np.abs(np.stack([
         results[:, 0] - results[:, i+1] for i in range(len(control_methods))
@@ -346,9 +367,18 @@ def simulate_control(
             }
             error_table.add_row([
                 control_method,
-                "%.3f" % error_calcs[rlab][control_method]["error_mean"][loss_start_step:].mean(),
-                "%.3f" % error_calcs[rlab][control_method]["error_80"][loss_start_step:].mean(),
-                "%.3f" % error_calcs[rlab][control_method]["error_100"][loss_start_step:].mean(),
+                "%.3f + %.4f" % (
+                    error_calcs[rlab][control_method]["error_mean"][control_start_step:].mean(),
+                    z() * error_calcs[rlab][control_method]["error_mean"][control_start_step:].std(ddof=1) / np.sqrt(results.shape[-2] - CONTROLLER_START),
+                ),
+                "%.3f + %.4f" % (
+                    error_calcs[rlab][control_method]["error_80"][control_start_step:].mean(),
+                    z() * error_calcs[rlab][control_method]["error_80"][control_start_step:].std(ddof=1) / np.sqrt(results.shape[-2] - CONTROLLER_START),
+                ),
+                "%.3f + %.4f" % (
+                    error_calcs[rlab][control_method]["error_100"][control_start_step:].mean(),
+                    z() * error_calcs[rlab][control_method]["error_100"][control_start_step:].std(ddof=1) / np.sqrt(len(results)),
+                ),
             ], [1, 0, 0, 0])
 
         log(f"Loss statistics for {env.format_label(rlab)}", error_table)
