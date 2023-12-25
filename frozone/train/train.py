@@ -1,5 +1,5 @@
 import math
-from typing import Type
+import os
 
 import numpy as np
 import torch
@@ -240,7 +240,7 @@ def train(job: JobDescription):
                         env.load(train_config_nnsim, train_results_nnsim)
                     with TT.profile("Simulate control"):
                         simulate_control(
-                            job.location,
+                            os.path.join(job.location, "SIMULATION"),
                             env,
                             models,
                             test_dataset,

@@ -6,7 +6,7 @@ from typing import Type
 import numpy as np
 import torch
 from pelutils import TT, log, Table
-from pelutils.parser import Option, Parser
+from pelutils.parser import Option, Parser, JobDescription
 from pelutils.ds.stats import z
 from tqdm import tqdm
 
@@ -384,7 +384,7 @@ def simulate_control(
 
         log(f"Loss statistics for {env.format_label(rlab)}", error_table)
 
-    np.savez_compressed(os.path.join(path, "simulation-results.npy"), results=results, error=error, error_calcs=error_calcs)
+    np.savez_compressed(os.path.join(path, "simulation-results.npz"), results=results, error=error, error_calcs=error_calcs)
 
     with TT.profile("Plot error"):
         plot_error(path, env, train_cfg, simulation_cfg, error_calcs)
@@ -397,22 +397,27 @@ if __name__ == "__main__":
     parser = Parser(
         Option("num-simulations", default=None, type=int),
         Option("control-window", default=None, type=int),
-        Option("opt-steps", default=10),
+        Option("opt-steps", default=15),
         Option("step-size", default=1e-3),
     )
     job = parser.parse_args()
+    job.location = os.path.join(job.location, job.name)
+    job.prepare_directory()
 
     log.configure(os.path.join(job.location, "simulated-controller.log"))
 
-    with log.log_errors:
+    with log.log_errors, TT.profile(job.name):
+        job.prepare_directory()
+
         log.section("Loading stuff to run simulation")
         log(pformat(vars(job)))
 
         log("Loading config and results")
-        train_cfg = TrainConfig.load(job.location)
+        traindir = os.path.join(job.location, os.path.pardir)
+        train_cfg = TrainConfig.load(traindir)
         job.control_window = job.control_window or train_cfg.prediction_window
         assert 0 < job.control_window <= train_cfg.prediction_window
-        train_results = TrainResults.load(job.location)
+        train_results = TrainResults.load(traindir)
 
         env = train_cfg.get_env()
         if env is environments.FloatZoneNNSim:
@@ -420,7 +425,7 @@ if __name__ == "__main__":
 
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
-            models = [FzNetwork.load(job.location, i) for i in range(train_cfg.num_models)]
+            models = [FzNetwork.load(traindir, i) for i in range(train_cfg.num_models)]
 
         log("Loading data")
         test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
