@@ -8,8 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pelutils.ds.plots as plots
 
-from frozone.environments import Environment
+from frozone.environments import Environment, Steuermann
 from frozone.eval import SimulationConfig
+from frozone.plot import get_figure_args
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -41,7 +42,8 @@ def plot_simulated_control(
     timesteps_pred = timesteps_pred_index * env.dt / 3600
 
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
-    height = math.ceil((len(env.XLabels) + len(env.ULabels)) / width)
+    # I don't think this works in general because is is not ==, but it is fine for now
+    height = math.ceil((len(env.XLabels) + len(env.ULabels) - (Steuermann.XLabels.FullPolyDia in env.XLabels)) / width)
 
     def get_next_label():
         i = 0
@@ -53,13 +55,20 @@ def plot_simulated_control(
             i += 1
 
     label_maker = get_next_label()
-    with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.png" % sample_no), figsize=(12.5 * width, 10 * height)):
+    with plots.Figure(os.path.join(path, _plot_folder, "sample_%i.pdf" % sample_no),
+                      **get_figure_args(height, width, w=10, h=9, fontsize=28, other_rc_params={"lines.linewidth": 2.5})):
+        index = 0
         for j in range(width * height):
             try:
                 label = next(label_maker)
             except StopIteration:
                 break
-            plt.subplot(width, height, j + 1)
+            if label is Steuermann.XLabels.FullPolyDia:
+                continue
+
+            index += 1
+
+            plt.subplot(width, height, index)
             is_x = isinstance(label, env.XLabels)
             if is_x:
                 true = X_true
@@ -73,9 +82,18 @@ def plot_simulated_control(
                 pred_by_model = U_pred_by_model
 
             if not is_x and label in env.predefined_control:
-                plt.plot(timesteps_true, true[:, label], lw=1.2, color="grey")
+                plt.plot(
+                    timesteps_true[:timesteps_pred_index[-1]],
+                    true[:timesteps_pred_index[-1], label],
+                    color="grey",
+                )
             if is_x and label in env.reference_variables:
-                plt.plot(timesteps_true, R_true[:, env.reference_variables.index(label)], lw=1.2, color="red", label="Target")
+                plt.plot(
+                    timesteps_true[:timesteps_pred_index[-1]],
+                    R_true[:timesteps_pred_index[-1], env.reference_variables.index(label)],
+                    color="red",
+                    label="Target",
+                )
             if is_x or label in env.predicted_control:
                 # To plot for all models, use
                 for k in range(train_cfg.num_models):
@@ -84,35 +102,32 @@ def plot_simulated_control(
                         timesteps_pred,
                         pred_by_model[k, timesteps_pred_index, label],
                         alpha=0.7,
-                        lw=1.2,
                         color=plots.tab_colours[0],
                         label="Individual predictions" if k == 0 else None,
                     )
                 plt.plot(
                     timesteps_pred,
                     pred[timesteps_pred_index, label],
-                    lw=1.2,
                     color=plots.tab_colours[1],
                     label="Ensemble",
                 )
                 plt.plot(
                     timesteps_pred,
                     pred_opt[timesteps_pred_index, label],
-                    lw=1.2,
                     color=plots.tab_colours[2],
-                    label="Ensemble (opt)",
+                    label="Optimized",
                 )
 
             plt.xlabel("Time [h]")
-            plt.ylabel(env.format_label(label))
+            plt.title(env.format_label(label))
             plt.legend()
 
             plt.grid()
 
-        plt.suptitle(
-            f"{env.__name__} controller - sample {sample_no}",
-            fontsize="xx-large",
-        )
+        # plt.suptitle(
+        #     f"{env.__name__} controller - sample {sample_no}",
+        #     fontsize="xx-large",
+        # )
 
 def plot_error(
     path: str,
@@ -122,7 +137,7 @@ def plot_error(
     error_calcs: dict[int, dict[str, dict[str, np.ndarray]]],
 ):
 
-    with plots.Figure(os.path.join(path, _plot_folder, "error.png"), figsize=(12.5 * len(env.reference_variables), 10)):
+    with plots.Figure(os.path.join(path, _plot_folder, "error.pdf"), **get_figure_args(1, len(env.reference_variables), w=13, h=10, legend_fontsize=1, fontsize=24)):
         for i, rlab in enumerate(error_calcs):
             plt.subplot(1, len(env.reference_variables), i + 1)
             plt.plot([0], [0], c="grey", label="Mean")
@@ -135,13 +150,12 @@ def plot_error(
                 plt.plot(timesteps, error_calcs[rlab][control_method]["error_80"], "--", c=plots.tab_colours[j])
                 plt.plot(timesteps, error_calcs[rlab][control_method]["error_100"],  ":", c=plots.tab_colours[j])
 
-            plt.legend(loc=1)
+            plt.legend(loc=1, ncol=2)
             plt.grid()
             plt.xlabel("Time [h]")
             plt.ylabel(env.format_label(rlab))
 
-
-        plt.suptitle(
-            f"Error in control over {simulation_cfg.num_samples:,} simulations",
-            fontsize="xx-large",
-        )
+        # plt.suptitle(
+        #     f"Error in control over {simulation_cfg.num_samples:,} simulations",
+        #     fontsize="xx-large",
+        # )
