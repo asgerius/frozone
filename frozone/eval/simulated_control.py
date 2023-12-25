@@ -244,7 +244,7 @@ def simulate_control(
         dm.eval().requires_grad_(False)
         cm.eval().requires_grad_(False)
 
-    log("Simulating data")
+    log("Simulating data", simulation_cfg)
     control_interval = simulation_cfg.control_every_steps(env, train_cfg)
     control_start_step = int(CONTROLLER_START // env.dt)
 
