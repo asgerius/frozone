@@ -341,7 +341,7 @@ def simulate_control(
 
         results.append(np.stack([
             R_true[:control_end],
-            X_pred_by_model[0][:control_end, env.reference_variables],
+            *X_pred_by_model[:, :control_end, env.reference_variables],
             X_pred[:control_end, env.reference_variables],
             X_pred_opt[:control_end, env.reference_variables],
         ], axis=0))
@@ -349,7 +349,8 @@ def simulate_control(
     results = np.array(results)
     np.save(os.path.join(path, "simulation-results.npy"), results)
 
-    control_methods = ("Single model", "Ensemble", "Optimized ensemble")
+    control_methods = (*("Model %i" % (i + 1) for i in range(train_cfg.num_models)), "Ensemble", "Optimized ensemble")
+    # Error has shape num samples x control methods x time steps x reference variables
     error = np.abs(np.stack([
         results[:, 0] - results[:, i+1] for i in range(len(control_methods))
     ], axis=1))
