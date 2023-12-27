@@ -45,7 +45,7 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
 
     columns = 4
     is_floatzone = env is environments.FloatZone
-    rows = math.ceil((len(env.XLabels) + len(env.ULabels) + len(env.ZLabels) + is_floatzone) / columns)
+    rows = math.ceil((len(env.XLabels) + len(env.ULabels) + is_floatzone - 1) / columns)
 
     log("Plotting %i samples" % len(dataset))
     for i, (metadata, (X, U, S, R, Z)) in enumerate(dataset):
@@ -94,11 +94,11 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
 
             else:
                 for xlabel in env.XLabels:
-                    if xlabel is environments.Steuermann.XLabels.FullPolyDia:
+                    if xlabel.name == "FullPolyDia":
                         continue
                     subplot_no += 1
                     plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(X)), X[:, xlabel], label="Observed")
+                    plt.plot(env.dt * np.arange(len(X)) / 3600, X[:, xlabel], label="Observed" if xlabel in env.reference_variables else None)
                     if xlabel in env.reference_variables:
                         plt.plot(env.dt * np.arange(len(X)) / 3600, R[:, env.reference_variables.index(xlabel)], color="red", label="Target")
                     plt.xlabel("Time [h]")
@@ -114,13 +114,13 @@ def analyse_processed_data(job: JobDescription, env: Type[environments.Environme
                     plt.title(env.format_label(ulabel))
                     plt.grid()
 
-                for zlabel in env.ZLabels:
-                    subplot_no += 1
-                    plt.subplot(rows, columns, subplot_no)
-                    plt.plot(env.dt * np.arange(len(Z)) / 3600, Z[:, zlabel])
-                    plt.xlabel("Time [h]")
-                    plt.title(env.format_label(zlabel))
-                    plt.grid()
+                # for zlabel in env.ZLabels:
+                #     subplot_no += 1
+                #     plt.subplot(rows, columns, subplot_no)
+                #     plt.plot(env.dt * np.arange(len(Z)) / 3600, Z[:, zlabel])
+                #     plt.xlabel("Time [h]")
+                #     plt.title(env.format_label(zlabel))
+                #     plt.grid()
 
             if is_floatzone:
                 subplot_no += 1
