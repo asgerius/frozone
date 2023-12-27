@@ -5,8 +5,8 @@ from typing import Type
 
 import numpy as np
 import torch
-from pelutils import TT, log, Table
-from pelutils.parser import Option, Parser, JobDescription
+from pelutils import TT, log, Table, get_repo
+from pelutils.parser import Option, Parser
 from pelutils.ds.stats import z
 from tqdm import tqdm
 
@@ -406,8 +406,9 @@ if __name__ == "__main__":
 
     log.configure(os.path.join(job.location, "simulated-controller.log"))
 
-    with log.log_errors, TT.profile(job.name):
+    with log.log_errors:
         job.prepare_directory()
+        log.section("Job %s" % job.name, vars(job), get_repo()[1])
 
         log.section("Loading stuff to run simulation")
         log(pformat(vars(job)))
