@@ -407,7 +407,7 @@ if __name__ == "__main__":
 
     with log.log_errors:
         job.prepare_directory()
-        log.section("Job %s" % job.name, vars(job))
+        log.section("Simulation %s" % job.name)
         log.log_repo()
         log(HardwareInfo.string())
 
