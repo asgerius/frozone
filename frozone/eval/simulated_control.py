@@ -368,15 +368,15 @@ def simulate_control(
             }
             error_table.add_row([
                 control_method,
-                "%.3f + %.4f" % (
+                "%.3f +/- %.4f" % (
                     error_calcs[rlab][control_method]["error_mean"][control_start_step:].mean(),
                     z() * error_calcs[rlab][control_method]["error_mean"][control_start_step:].std(ddof=1) / np.sqrt(results.shape[-2] - CONTROLLER_START),
                 ),
-                "%.3f + %.4f" % (
+                "%.3f +/- %.4f" % (
                     error_calcs[rlab][control_method]["error_80"][control_start_step:].mean(),
                     z() * error_calcs[rlab][control_method]["error_80"][control_start_step:].std(ddof=1) / np.sqrt(results.shape[-2] - CONTROLLER_START),
                 ),
-                "%.3f + %.4f" % (
+                "%.3f +/- %.4f" % (
                     error_calcs[rlab][control_method]["error_100"][control_start_step:].mean(),
                     z() * error_calcs[rlab][control_method]["error_100"][control_start_step:].std(ddof=1) / np.sqrt(len(results)),
                 ),
