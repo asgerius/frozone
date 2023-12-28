@@ -5,7 +5,7 @@ from typing import Type
 
 import numpy as np
 import torch
-from pelutils import TT, log, Table, get_repo
+from pelutils import TT, log, Table
 from pelutils.parser import Option, Parser
 from pelutils.ds.stats import z
 from tqdm import tqdm
@@ -408,7 +408,8 @@ if __name__ == "__main__":
 
     with log.log_errors:
         job.prepare_directory()
-        log.section("Job %s" % job.name, vars(job), get_repo()[1])
+        log.section("Job %s" % job.name, vars(job))
+        log.log_repo()
 
         log.section("Loading stuff to run simulation")
         log(pformat(vars(job)))
