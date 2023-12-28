@@ -32,7 +32,7 @@ def rungekutta(tstart, tend, h, f, x, **kwargs):
 
     return x
 
-def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
+def simulate(x, u, t0, t1, f, rk_steps: int, **kwargs) -> np.ndarray:
     """
     :param x: initial state
     :param f: system of differential equations
@@ -40,6 +40,6 @@ def simulate(x, u, t0, t1, f, **kwargs) -> np.ndarray:
     :return: Future state prediction
     """
 
-    x_pred = rungekutta(t0, t1, (t1 - t0) / 10, f, x=x, u=u, **kwargs)
+    x_pred = rungekutta(t0, t1, (t1 - t0) / rk_steps, f, x=x, u=u, **kwargs)
 
     return x_pred

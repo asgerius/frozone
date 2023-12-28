@@ -15,6 +15,8 @@ class Steuermann(Environment):
     dt = 6
     is_simulation = True
 
+    _rk_steps = 2
+
     class XLabels(enum.IntEnum):
         PolyDia      = 0
         CrystalDia   = 1
@@ -106,7 +108,7 @@ class Steuermann(Environment):
         return Z
 
     @classmethod
-    def simulate(cls, n: int, timesteps: int, with_tqdm=True, tqdm_position=0) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def simulate(cls, n: int, timesteps: int, with_tqdm=True, tqdm_position=0) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
         X = np.empty((n, timesteps, len(cls.XLabels)), dtype=cls.X_dtype)
         X[:, 0] = cls.sample_init_process_vars(n)
@@ -186,6 +188,7 @@ class Steuermann(Environment):
                 Z[i, cls.ZLabels.Time],
                 Z[i, cls.ZLabels.Time] + cls.dt,
                 f,
+                cls._rk_steps,
                 z=[X[i, cls.XLabels.PolyAngle] * np.pi / 180],
             )
 
