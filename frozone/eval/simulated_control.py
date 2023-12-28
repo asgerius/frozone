@@ -11,7 +11,7 @@ from pelutils.ds.stats import z
 from tqdm import tqdm
 
 import frozone.environments as environments
-from frozone import amp_context, cuda_sync
+from frozone import cuda_sync
 from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files, CONTROLLER_START
 from frozone.data.dataloader import dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
@@ -72,7 +72,7 @@ class ControllerStrategies:
                     Xf = interpolate(self.train_cfg.Fi, self.R_true_d[:, seq_mid:seq_end]),
                 )
                 cuda_sync()
-            with TT.profile("Predict"), amp_context():
+            with TT.profile("Predict"):
                 U[j, seq_mid:seq_control, self.env.predicted_control] = interpolate(self.train_cfg.F, control_model(
                     interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
                     interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
@@ -117,7 +117,7 @@ class ControllerStrategies:
         )
 
         for dynamics_model, control_model in self.models:
-            with TT.profile("Predict"), amp_context():
+            with TT.profile("Predict"):
                 U[0, seq_mid:seq_control, self.env.predicted_control] += interpolate(self.train_cfg.F, control_model(
                     interpolate(self.train_cfg.Hi, Xh, self.train_cfg, h=True),
                     interpolate(self.train_cfg.Hi, Uh, self.train_cfg, h=True),
@@ -182,12 +182,11 @@ class ControllerStrategies:
 
             for _ in range(self.simulation_cfg.opt_steps):
                 with TT.profile("Step"):
-                    with amp_context():
-                        Xf = dynamics_model(
-                            Xh_interp, Uh_interp, Sh_interp,
-                            Sf = Sf_interp,
-                            Uf = Uf,
-                        )
+                    Xf = dynamics_model(
+                        Xh_interp, Uh_interp, Sh_interp,
+                        Sf = Sf_interp,
+                        Uf = Uf,
+                    )
 
                     loss = dynamics_model.loss(Xf_interp, Xf)
                     loss.backward()
