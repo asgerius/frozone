@@ -346,7 +346,6 @@ def simulate_control(
         ], axis=0))
 
     results = np.array(results)
-    np.save(os.path.join(path, "simulation-results.npy"), results)
 
     control_methods = (*("Model %i" % (i + 1) for i in range(train_cfg.num_models)), "Ensemble", "Optimized ensemble")
     # Error has shape num samples x control methods x time steps x reference variables
