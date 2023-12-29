@@ -75,8 +75,8 @@ if __name__ == "__main__":
         print("Compiling with backend %s" % backend)
         compiled_networks[backend] = torch.compile(control_network, fullgraph=True, dynamic=False, backend=backend)
 
-    warmup = 5
-    n = 1000
+    warmup = 10
+    n = 10000
     data_files = list_processed_data_files(args.data, TEST_SUBDIR)
     dataset, _ = load_data_files(data_files, train_cfg, max_num_files=10)
 
