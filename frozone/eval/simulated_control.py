@@ -1,5 +1,6 @@
 import os
 import shutil
+from ast import literal_eval
 from pprint import pformat
 from typing import Type
 
@@ -397,6 +398,7 @@ if __name__ == "__main__":
         Option("control-window", default=None, type=int),
         Option("opt-steps", default=15),
         Option("step-size", default=1e-3),
+        Option("model-subset", default="None:None"),
     )
     job = parser.parse_args()
     job.location = os.path.join(job.location, job.name)
@@ -427,6 +429,13 @@ if __name__ == "__main__":
         log("Loading models")
         with TT.profile("Load model", hits=train_cfg.num_models):
             models = [FzNetwork.load(traindir, i) for i in range(train_cfg.num_models)]
+
+        start, end = job.model_subset.split(":")
+        start = literal_eval(start)
+        end = literal_eval(end)
+        models = models[start:end]
+        log("Using models from %s to %s" % (start, end))
+        train_cfg.num_models = len(models)
 
         log("Loading data")
         test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
