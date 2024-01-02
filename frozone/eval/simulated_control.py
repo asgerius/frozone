@@ -17,7 +17,7 @@ from frozone.data import TEST_SUBDIR, Dataset, list_processed_data_files, CONTRO
 from frozone.data.dataloader import dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import SimulationConfig
 from frozone.model.floatzone_network import FzNetwork, interpolate
-from frozone.plot.plot_simulated_control import plot_simulated_control, plot_error, _plot_folder as sim_plot_folder
+from frozone.plot.plot_simulated_control import plot_simulated_control, plot_error, _plot_folder as sim_plot_folder, plot_simulated_control_targets_only
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -322,6 +322,23 @@ def simulate_control(
         if i < 10:
             with TT.profile("Plot"):
                 plot_simulated_control(
+                    path = path,
+                    env = env,
+                    train_cfg = train_cfg,
+                    train_results = train_results,
+                    simulation_cfg = simulation_cfg,
+                    X_true = X_true,
+                    U_true = U_true,
+                    R_true = R_true,
+                    X_pred = X_pred[:control_end],
+                    U_pred = U_pred[:control_end],
+                    X_pred_opt = X_pred_opt[:control_end],
+                    U_pred_opt = U_pred_opt[:control_end],
+                    X_pred_by_model = X_pred_by_model[:, :control_end],
+                    U_pred_by_model = U_pred_by_model[:, :control_end],
+                    sample_no = i,
+                )
+                plot_simulated_control_targets_only(
                     path = path,
                     env = env,
                     train_cfg = train_cfg,

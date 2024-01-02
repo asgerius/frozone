@@ -1,13 +1,13 @@
 import math
 import os
-import shutil
-from typing import Optional, Type
+from typing import Type
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pelutils.ds.plots as plots
 
+from frozone.data import CONTROLLER_START
 from frozone.environments import Environment, Steuermann
 from frozone.eval import SimulationConfig
 from frozone.plot import get_figure_args
@@ -38,7 +38,7 @@ def plot_simulated_control(
     sample_no: int,
 ):
     timesteps_true = np.arange(X_true.shape[0]) * env.dt / 3600
-    timesteps_pred_index = np.arange(X_pred.shape[0])[train_cfg.H:]
+    timesteps_pred_index = np.arange(X_pred.shape[0])[int(CONTROLLER_START // env.dt):]
     timesteps_pred = timesteps_pred_index * env.dt / 3600
 
     width = math.ceil(math.sqrt(len(env.XLabels) + len(env.ULabels)))
@@ -116,6 +116,113 @@ def plot_simulated_control(
                     pred_opt[timesteps_pred_index, label],
                     color=plots.tab_colours[2],
                     label="Optimized",
+                )
+
+            plt.xlabel("Time [h]")
+            plt.title(env.format_label(label))
+            plt.legend()
+
+            plt.grid()
+
+        # plt.suptitle(
+        #     f"{env.__name__} controller - sample {sample_no}",
+        #     fontsize="xx-large",
+        # )
+
+def plot_simulated_control_targets_only(
+    path: str,
+    env: Type[Environment],
+    train_cfg: TrainConfig,
+    train_results: TrainResults,
+    simulation_cfg: SimulationConfig,
+    X_true: np.ndarray,
+    U_true: np.ndarray,
+    R_true: np.ndarray,
+    X_pred: np.ndarray,
+    U_pred: np.ndarray,
+    X_pred_opt: np.ndarray,
+    U_pred_opt: np.ndarray,
+    X_pred_by_model: np.ndarray,
+    U_pred_by_model: np.ndarray,
+    sample_no: int,
+):
+    timesteps_true = np.arange(X_true.shape[0]) * env.dt / 3600
+    timesteps_pred_index = np.arange(X_pred.shape[0])[int(CONTROLLER_START // env.dt):]
+    timesteps_pred = timesteps_pred_index * env.dt / 3600
+
+    width = math.ceil(math.sqrt(len(env.reference_variables) + len(env.predicted_control)))
+    # I don't think this works in general because is is not ==, but it is fine for now
+    height = math.ceil((len(env.reference_variables) + len(env.predicted_control)) / width)
+
+    def get_next_label():
+        i = 0
+        while i < len(env.reference_variables) + len(env.predicted_control):
+            if i < len(env.reference_variables):
+                yield env.reference_variables[i]
+            else:
+                yield env.predicted_control[i-len(env.reference_variables)]
+            i += 1
+
+    label_maker = get_next_label()
+    with plots.Figure(os.path.join(path, _plot_folder, "targets_%i.pdf" % sample_no),
+                      **get_figure_args(height, width, w=10, h=9, fontsize=28, other_rc_params={"lines.linewidth": 2.5})):
+        index = 0
+        for j in range(width * height):
+            try:
+                label = next(label_maker)
+            except StopIteration:
+                break
+
+            index += 1
+
+            plt.subplot(width, height, index)
+            is_x = isinstance(label, env.XLabels)
+            if is_x:
+                true = X_true
+                pred = X_pred
+                pred_opt = X_pred_opt
+                pred_by_model = X_pred_by_model
+            else:
+                true = U_true
+                pred = U_pred
+                pred_opt = U_pred_opt
+                pred_by_model = U_pred_by_model
+
+            if not is_x and label in env.predefined_control:
+                plt.plot(
+                    timesteps_true[:timesteps_pred_index[-1]],
+                    true[:timesteps_pred_index[-1], label],
+                    color="grey",
+                )
+            if is_x and label in env.reference_variables:
+                plt.plot(
+                    timesteps_true[:timesteps_pred_index[-1]],
+                    R_true[:timesteps_pred_index[-1], env.reference_variables.index(label)],
+                    color="red",
+                    label="Target",
+                )
+            if is_x or label in env.predicted_control:
+                # To plot for all models, use
+                for k in range(train_cfg.num_models):
+                # k = 0
+                    plt.plot(
+                        timesteps_pred,
+                        pred_by_model[k, timesteps_pred_index, label],
+                        alpha=0.7,
+                        color=plots.tab_colours[0],
+                        label="Individual DCP" if k == 0 else None,
+                    )
+                plt.plot(
+                    timesteps_pred,
+                    pred[timesteps_pred_index, label],
+                    color=plots.tab_colours[1],
+                    label="Ensemble DCP",
+                )
+                plt.plot(
+                    timesteps_pred,
+                    pred_opt[timesteps_pred_index, label],
+                    color=plots.tab_colours[2],
+                    label="Ensemble ODN",
                 )
 
             plt.xlabel("Time [h]")
