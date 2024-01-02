@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 import numpy as np
 import torch
 import torch.cuda.amp as amp
-from pelutils import TT
+from pelutils import TT, except_keys
 from tqdm import tqdm
 
 from frozone import cuda_sync
@@ -29,12 +29,13 @@ def sample_model_input(
     seq_mid = seq_start + train_cfg.H
     seq_end = seq_start + seq_len
 
-    Xh, Uh, Sh, Sf, Rf = numpy_to_torch_device(
+    Xh, Uh, Sh, Sf, Rf, Uf = numpy_to_torch_device(
         np.expand_dims(X[seq_start:seq_mid], 0),
         np.expand_dims(U[seq_start:seq_mid], 0),
         np.expand_dims(S[seq_start:seq_mid], 0),
         np.expand_dims(S[seq_mid:seq_end], 0),
         np.expand_dims(R[seq_mid:seq_end], 0),
+        np.expand_dims(U[seq_mid:seq_end], 0),
     )
 
     return {
@@ -43,6 +44,7 @@ def sample_model_input(
         "Sh": interpolate(train_cfg.Hi, Sh, train_cfg, h=True),
         "Sf": interpolate(train_cfg.Fi, Sf),
         "Xf": interpolate(train_cfg.Fi, Rf),
+        "Uf": interpolate(train_cfg.Fi, Uf),
     }
 
 @torch.inference_mode()
@@ -57,6 +59,27 @@ def with_amp(train_cfg: TrainConfig, control_model: FzNetwork, input: dict[str, 
 @torch.inference_mode()
 def torch_compile(train_cfg: TrainConfig, control_model: FzNetwork, input: dict[str, torch.FloatTensor]) -> torch.FloatTensor:
     return interpolate(train_cfg.F, control_model(**input))
+
+def backprop(train_cfg: TrainConfig, dynamics_model: FzNetwork, control_model, input: dict[str, torch.FloatTensor]):
+
+    with TT.profile("Predict"), torch.no_grad():
+        Uf = control_model(**except_keys(input, ["Uf"]))
+        cuda_sync()
+    Uf.requires_grad_()
+    optimizer = torch.optim.AdamW([Uf], lr=1e-3)
+
+    for _ in range(3):
+        with TT.profile("Step"):
+            Xf = dynamics_model(Uf=Uf, **except_keys(input, ["Xf", "Uf"]))
+
+            loss = dynamics_model.loss(Xf, Xf)
+            loss.backward()
+            Uf.grad[..., Steuermann.predefined_control] = 0
+
+            optimizer.step()
+            optimizer.zero_grad()
+
+            cuda_sync()
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -88,14 +111,18 @@ if __name__ == "__main__":
 
         cuda_sync()
         with TT.profile("Default") if i >= warmup else contextlib.ExitStack():
-            outputs["default"] = default(train_cfg, control_network, input)
+            outputs["default"] = default(train_cfg, control_network, except_keys(input, ["Uf"]))
             cuda_sync()
         with TT.profile("AMP") if i >= warmup else contextlib.ExitStack():
-            outputs["amp"] = with_amp(train_cfg, control_network, input)
+            outputs["amp"] = with_amp(train_cfg, control_network, except_keys(input, ["Uf"]))
             cuda_sync()
         for backend, compiled_network in compiled_networks.items():
             with TT.profile("Compiled %s" % backend) if i >= warmup else contextlib.ExitStack():
                 outputs["compiled-%s" % backend] = torch_compile(train_cfg, compiled_network, input)
                 cuda_sync()
+
+        with TT.profile("Step") if i >= warmup else contextlib.ExitStack():
+            backprop(train_cfg, dynamics_network, control_network, input)
+            cuda_sync()
 
     print(TT)
