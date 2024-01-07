@@ -32,7 +32,7 @@ PHASES = {
     2: "All_Ready",
     4: "Preheating",
     8: "Drop",  # Automated growth starts here
-    16: "Snoevs",
+    16: "Start",
     32: "Vending",
     64: "Necking",  # This is where it is interesting
     128: "Unused",  # Necking and PreCone can be combined, as the split is artificial
@@ -44,7 +44,7 @@ PHASES = {
     8192: "Cooling",
 }
 # Use indices
-PHASE_TO_INDEX = { 8: 0, 16: 1, 32: 2, 64: 3, 256: 4, 512: 5 }
+PHASE_TO_INDEX = { 8: 0, 16: 1, 512: 2 }
 
 def list_processed_data_files(data_path: str, train_test_subdir: str) -> list[str]:
     path = os.path.join(data_path, PROCESSED_SUBDIR, train_test_subdir, "**", "*.npz")

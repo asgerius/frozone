@@ -137,6 +137,8 @@ def get_phase_slices(fname: str, df: pd.DataFrame) -> dict[int, slice]:
     end_index = len(df)
     for index in range(len(df) - 2, -1, -1):
         phase = df.Growth_State_Act.values[index]
+        if 16 <= phase <= 256:
+            phase = 16
         if phase < current_phase:
             start_index = index + 1
             slices[current_phase] = slice(start_index, end_index)
