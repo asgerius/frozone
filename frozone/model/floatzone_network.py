@@ -80,12 +80,22 @@ class FzNetwork(_FloatzoneModule):
             len(self.target_weights_control) / \
             self.target_weights_control.sum()
 
-        def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor) -> torch.FloatTensor:
+        def loss_fn_x(x_target: torch.FloatTensor, x_pred: torch.FloatTensor, ignore_mask: Optional[torch.BoolTensor]) -> torch.FloatTensor:
             loss: torch.FloatTensor = loss_fn(x_target, x_pred).mean(dim=0)
-            return (loss.T @ self.loss_weight * self.target_weights_process).mean()
-        def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor) -> torch.FloatTensor:
+            if ignore_mask is not None:
+                loss = loss[ignore_mask]
+                loss_weight = self.loss_weight[ignore_mask]
+            else:
+                loss_weight = self.loss_weight
+            return (loss.T @ loss_weight * self.target_weights_process).mean()
+        def loss_fn_u(u_target: torch.FloatTensor, u_pred: torch.FloatTensor, ignore_mask: Optional[torch.BoolTensor]) -> torch.FloatTensor:
             loss: torch.FloatTensor = loss_fn(u_target, u_pred).mean(dim=0)
-            return (loss.T @ self.loss_weight * self.target_weights_control).mean()
+            if ignore_mask is not None:
+                loss = loss[ignore_mask]
+                loss_weight = self.loss_weight[ignore_mask]
+            else:
+                loss_weight = self.loss_weight
+            return (loss.T @ loss_weight * self.target_weights_control).mean()
 
         self._loss_fn_x = loss_fn_x
         self._loss_fn_u = loss_fn_u
@@ -144,13 +154,13 @@ class FzNetwork(_FloatzoneModule):
 
         return kernel
 
-    def loss(self, target_F: torch.FloatTensor, pred_F: torch.FloatTensor) -> torch.FloatTensor:
+    def loss(self, target_F: torch.FloatTensor, pred_F: torch.FloatTensor, ignore_mask: Optional[torch.BoolTensor] = None) -> torch.FloatTensor:
         target_F = self.smoothen_f(target_F)
 
         if self.for_control:
-            return self._loss_fn_u(target_F, pred_F)
+            return self._loss_fn_u(target_F, pred_F, ignore_mask)
         else:
-            return self._loss_fn_x(target_F, pred_F)
+            return self._loss_fn_x(target_F, pred_F, ignore_mask)
 
     def to(self, device):
         self.smoothing_kernel_h = self.smoothing_kernel_h.to(device)
