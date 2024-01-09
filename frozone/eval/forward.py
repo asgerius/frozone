@@ -14,7 +14,7 @@ from frozone.data import TEST_SUBDIR, list_processed_data_files
 from frozone.data.dataloader import Dataset, dataset_size, load_data_files, numpy_to_torch_device, standardize
 from frozone.eval import ForwardConfig
 from frozone.model.floatzone_network import FzNetwork, interpolate
-from frozone.plot.plot_forward import plot_forward
+from frozone.plot.plot_forward import plot_forward, plot_forward_for_report
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -176,6 +176,12 @@ def forward(
             X_true, U_true, X_true_smooth, U_true_smooth,
             X_pred, U_pred, U_pred_opt, U_pred_ref, R_true,
         )
+        plot_forward_for_report(
+            path, env,
+            train_cfg, train_results, forward_cfg, metadatas,
+            X_true, U_true, S_true, X_true_smooth, U_true_smooth,
+            X_pred, U_pred, U_pred_opt, U_pred_ref, R_true,
+        )
 
     for dm, cm in models:
         dm.train().requires_grad_(True)
@@ -207,7 +213,7 @@ if __name__ == "__main__":
         log("Loading data")
         with TT.profile("Load data"):
             test_npz_files = list_processed_data_files(train_cfg.data_path, TEST_SUBDIR)
-            test_dataset, _ = load_data_files(test_npz_files, train_cfg, max_num_files=3*forward_cfg.num_samples, year=datetime.now().year)
+            test_dataset, _ = load_data_files(test_npz_files, train_cfg, max_num_files=3*forward_cfg.num_samples, year=2023)
             log(
                 "Loaded dataset",
                 "Used test files:  %s" % thousands_seperators(len(test_dataset)),
