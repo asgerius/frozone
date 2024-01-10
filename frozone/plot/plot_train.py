@@ -1,4 +1,5 @@
 import os
+import sys
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ import pelutils.ds.plots as plots
 from matplotlib.ticker import LogLocator, LogFormatterSciNotation
 from pelutils import TT
 
+from frozone.plot import get_figure_args
 from frozone.train import TrainConfig, TrainResults
 
 
@@ -17,7 +19,10 @@ matplotlib.use('Agg')
 _plot_folder = "train-plots"
 
 def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
-    with TT.profile("Plot loss"), plots.Figure(os.path.join(loc, _plot_folder, "loss.png")):
+    with TT.profile("Plot loss"), plots.Figure(
+        os.path.join(loc, _plot_folder, "loss.pdf"),
+        **get_figure_args(w=14, h=9, fontsize=24),
+    ):
 
         train_loss_x = np.array(train_results.train_loss_x)
         train_loss_u = np.array(train_results.train_loss_u)
@@ -25,27 +30,17 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         test_loss_x = np.array(train_results.test_loss_x)
         test_loss_u = np.array(train_results.test_loss_u)
 
-        plt.plot(train_loss_x.mean(axis=0), color="grey", alpha=0.2)
-        plt.plot(train_loss_u.mean(axis=0), color="grey", alpha=0.2)
-
-        plt.plot(*plots.moving_avg(train_loss_x.mean(axis=0), neighbors=12), label="Train loss $X$", color=plots.tab_colours[0], alpha=0.8)
-        plt.plot(*plots.moving_avg(train_loss_u.mean(axis=0), neighbors=12), label="Train loss $U$", color=plots.tab_colours[1], alpha=0.8)
-
-        plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), color="black", lw=2.7)
-        plt.plot(train_results.checkpoints, test_loss_x.mean(axis=0), "-.", color=plots.tab_colours[0], lw=1.5)
         for i, loss in enumerate(test_loss_x):
-            plt.scatter(train_results.checkpoints, loss, marker="3", color=plots.tab_colours[0], s=36, label="Test loss $X$" if i == 0 else None)
-        plt.plot(train_results.checkpoints, train_results.ensemble_loss_x, "-o", color="black", lw=2.7, ms=8)
-        plt.plot(train_results.checkpoints, train_results.ensemble_loss_x, "-o", color=plots.tab_colours[0], lw=1.5, ms=6, label="Ensemble loss $X$")
+            plt.plot(train_results.checkpoints, loss, "-o", color="dodgerblue", lw=1.5, label="Test loss $X$" if i == 0 else None)
 
-        plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), color="black", lw=2.7)
-        plt.plot(train_results.checkpoints, test_loss_u.mean(axis=0), "-.", color=plots.tab_colours[1], lw=1.5)
         for i, loss in enumerate(test_loss_u):
-            plt.scatter(train_results.checkpoints, loss, marker="3", color=plots.tab_colours[1], s=36, label="Test loss $U$" if i == 0 else None)
-        plt.plot(train_results.checkpoints, train_results.ensemble_loss_u, "-o", color="black", lw=2.7, ms=8)
-        plt.plot(train_results.checkpoints, train_results.ensemble_loss_u, "-o", color=plots.tab_colours[1], lw=1.5, ms=6, label="Ensemble loss $U$")
+            plt.plot(train_results.checkpoints, loss, "-o", color="tab:orange", lw=1.5, label="Test loss $U$" if i == 0 else None)
 
-        plt.title(train_cfg.env)
+        plt.plot(*plots.moving_avg(train_loss_x.mean(axis=0), neighbors=12), color="black", lw=3.5)
+        plt.plot(*plots.moving_avg(train_loss_x.mean(axis=0), neighbors=12), label="Train loss $X$", color="deepskyblue", lw=2.2)
+        plt.plot(*plots.moving_avg(train_loss_u.mean(axis=0), neighbors=12), color="black", lw=3.5)
+        plt.plot(*plots.moving_avg(train_loss_u.mean(axis=0), neighbors=12), label="Train loss $U$", color="coral", lw=2.2)
+
         plt.xlabel("Batch")
         plt.ylabel("Loss")
         plt.yscale("log")
@@ -56,10 +51,19 @@ def plot_loss(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
         plt.grid(visible=True, which="minor", ls="--")
 
 def plot_lr(loc: str, train_cfg: TrainConfig, train_results: TrainResults):
-    with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _plot_folder, "lr.png")):
+    with TT.profile("Plot learning rate"), plots.Figure(os.path.join(loc, _plot_folder, "lr.pdf")):
         plt.plot(train_results.lr)
 
         plt.xlabel("Batch")
         plt.ylabel("Learning rate")
 
         plt.grid()
+
+if __name__ == "__main__":
+    path = sys.argv[1]
+
+    train_cfg = TrainConfig.load(path)
+    train_res = TrainResults.load(path)
+
+    plot_loss(path, train_cfg, train_res)
+    plot_lr(path, train_cfg, train_res)
